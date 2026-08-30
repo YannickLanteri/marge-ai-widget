@@ -2,55 +2,45 @@
 /**
  * The widget window, flush against the right edge of the screen.
  *
- * Core idea: the window is ALWAYS click-through (setIgnoreMouseEvents). It
- * never steals focus and never swallows a click. Hover is derived from
- * sampling the cursor position in the main process, then handed to the
- * renderer which does its own hit-testing. It is the only approach that
- * behaves the same on macOS and on X11.
+ * Hover is derived from sampling the cursor position in the main process, then
+ * handed to the renderer for exact hit-testing. The window only accepts mouse
+ * input while the pointer is over a painted surface, so clicks on transparent
+ * desktop space continue to pass through.
  */
 
 const {
   app, BrowserWindow, screen, Tray, Menu, nativeImage, ipcMain, shell,
-  Notification, globalShortcut, powerMonitor
+  Notification, globalShortcut, powerMonitor, session
 } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const os = require('os');
-const { fetchUsage } = require('./usage');
+const { fetchUsage, mergeUsage } = require('./usage');
 const I18N = require('./i18n');
-const { nextDelay, shouldRefreshOnReveal, adjustFloor, initialDelay } = require('./schedule');
+const {
+  nextDelay, shouldRefreshOnReveal, manualRefreshAllowed, adjustFloor, initialDelay
+} = require('./schedule');
 const autostart = require('./autostart');
 const store = require('./state');
 const alerts = require('./alerts');
 const updater = require('./updater');
+const paths = require('./paths');
+const { DEFAULTS, sanitize: sanitizeConfig } = require('./config');
+const { startClaudeLogin } = require('./claude-login');
 const {
   G, layout, boundsForDisplay: computeBounds,
   isOuterRightEdge, inHotZone, insideKeepAlive, pickDisplay, sameBounds
 } = require('./geometry');
 
-// The number of rings depends on the account: every model carries its own
-// quota. The whole layout follows from it, and the window resizes if the API
-// returns one more.
+// Claude, Codex and Antigravity always keep the same physical position.
 let rows = 3;
 const DEMO = process.env.MARGE_DEMO === '1' || process.argv.includes('--demo');
 
-const CONFIG_PATH = path.join(os.homedir(), '.config', 'claude-marge', 'config.json');
-const DEFAULTS = {
-  verticalAnchor: 0.45,   // 0 = top of the screen, 1 = bottom
-  refreshSeconds: 300,
-  followCursorDisplay: true, // show up on whichever display holds the cursor
-  displayId: 'primary',      // used when the widget does not follow the mouse
-  language: 'auto',          // 'auto', or one of the codes in src/i18n.js
-  checkUpdates: true,        // look for a new commit once a day, and say so
-  theme: 'midnight',         // see src/themes.js
-  timeFormat: 'auto',        // 'auto', '12' or '24'
-  alertAt: [80, 95],         // notify once when a quota crosses these marks
-  shortcut: 'CommandOrControl+Shift+M' // toggle pinned mode; '' disables it
-};
+paths.migrateLegacy();
+const CONFIG_PATH = paths.configFile();
 
 function loadConfig() {
   try {
-    return { ...DEFAULTS, ...JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')) };
+    return sanitizeConfig(JSON.parse(fs.readFileSync(CONFIG_PATH, 'utf8')));
   } catch (_) {
     return { ...DEFAULTS };
   }
@@ -59,15 +49,7 @@ let config = loadConfig();
 
 /** Reveal needs something to reveal: write the defaults on first use. */
 function ensureConfigFile() {
-  try {
-    if (!fs.existsSync(CONFIG_PATH)) {
-      fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
-      fs.writeFileSync(CONFIG_PATH, JSON.stringify(config, null, 2) + '\n');
-    }
-    return true;
-  } catch (_) {
-    return false;
-  }
+  return fs.existsSync(CONFIG_PATH) || paths.writeJson(CONFIG_PATH, config);
 }
 
 async function revealConfig() {
@@ -79,13 +61,7 @@ async function revealConfig() {
 }
 
 function saveConfig(next) {
-  try {
-    fs.mkdirSync(path.dirname(CONFIG_PATH), { recursive: true });
-    fs.writeFileSync(CONFIG_PATH, JSON.stringify(next, null, 2) + '\n');
-    return true;
-  } catch (_) {
-    return false;
-  }
+  return paths.writeJson(CONFIG_PATH, next);
 }
 
 let win = null;
@@ -94,16 +70,18 @@ let visible = false;
 let hideTimer = null;
 let pollTimer = null;
 let refreshTimer = null;
-let lastData = { ok: false, reason: 'loading', gauges: [] };
-let lastGood = store.restoreLastGood();  // survives a restart, so no blank pill
-let failures = store.restoreFailures();  // survives a restart, so no lost backoff
+let lastManualRefreshAt = 0;
+let lastData = { ok: false, reason: 'loading', gauges: [], services: [] };
+let lastGood = DEMO ? null : store.restoreLastGood();
+let failures = DEMO ? 0 : store.restoreFailures();
 let inFlight = false;
 let pinned = false;       // pill stays out; the panel still follows the cursor
 let panelOpen = false;
-let alertLedger = store.read().alerts || {};
+let interactive = false;
+let alertLedger = DEMO ? {} : (store.read().alerts || {});
 // Starts at the configured interval rather than zero, or the first refresh
 // logs a pace change from nothing to the value it already had.
-let floorSeconds = store.read().floorSeconds || 0;
+let floorSeconds = DEMO ? 0 : (store.read().floorSeconds || 0);
 let cleanReads = 0;
 if (lastGood) lastData = { ...lastGood, stale: true, reason: 'loading' };
 let ready = false; // the page finished loading and is listening
@@ -167,6 +145,11 @@ function placeOn(display) {
 
 // --- Window -----------------------------------------------------------------
 
+function hardenWindow(target) {
+  target.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  target.webContents.on('will-navigate', (event) => event.preventDefault());
+}
+
 function createWindow() {
   const display = preferredDisplay();
   win = new BrowserWindow({
@@ -189,16 +172,18 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       contextIsolation: true,
       nodeIntegration: false,
+      sandbox: true,
       // Throttled while hidden, full speed while shown: setBackgroundThrottling
       // is flipped on reveal, so the entry animation never stutters.
       backgroundThrottling: true
     }
   });
   currentDisplayId = display.id;
+  hardenWindow(win);
 
   win.setAlwaysOnTop(true, 'screen-saver');
   win.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-  win.setIgnoreMouseEvents(true); // never steal a click, never take focus
+  win.setIgnoreMouseEvents(true);
 
   win.on('closed', () => {
     trace('window closed');
@@ -207,6 +192,7 @@ function createWindow() {
     // window throws.
     win = null;
     ready = false;
+    interactive = false;
     clearInterval(pollTimer);
     clearTimeout(refreshTimer);
   });
@@ -265,6 +251,13 @@ function setPanel(open) {
   if (ready && win && !win.isDestroyed()) win.webContents.send('panel', open);
 }
 
+function setInteractive(on) {
+  const next = on === true && visible;
+  if (next === interactive || !win || win.isDestroyed()) return;
+  interactive = next;
+  win.setIgnoreMouseEvents(!next);
+}
+
 function show() {
   if (!win || win.isDestroyed() || visible) return;
   visible = true;
@@ -273,7 +266,9 @@ function show() {
   win.showInactive();
   if (ready) win.webContents.send('reveal', true);
   if (!pinned) setPanel(true);
-  if (shouldRefreshOnReveal(lastGood && lastGood.fetchedAt, failures, Date.now())) refresh();
+  if (shouldRefreshOnReveal(
+    lastGood && lastGood.fetchedAt, failures, Date.now(), config.refreshSeconds
+  )) refresh();
 }
 
 function scheduleHide() {
@@ -282,6 +277,7 @@ function scheduleHide() {
     hideTimer = null;
     if (!visible || !win || win.isDestroyed()) return;
     visible = false;
+    setInteractive(false);
     setPanel(false);
     if (ready) win.webContents.send('reveal', false);
     // Let the exit animation play before hiding the window.
@@ -380,15 +376,17 @@ function pacing() {
 /** One log line per state change, never one per minute. */
 let lastLogged = null;
 function logState(data) {
-  const describe = (g) => `${g.model || g.kind} ${g.percent}%`;
+  const describe = (service) => service.ok
+    ? `${service.name} ${service.summaryRemaining}% left`
+    : `${service.name} ${service.reason}`;
   const state = data.ok
-    ? `ok ${(data.gauges || []).map(describe).join(', ')}`
+    ? `ok ${(data.services || []).map(describe).join(', ')}`
     : `failed ${data.reason} (attempt ${failures}, next try in ` +
       `${Math.round(nextDelay(data, failures, config.refreshSeconds, pacing()) / 1000)}s)`;
   if (state === lastLogged) return;
   lastLogged = state;
-  console.log(`[${new Date().toISOString()}] ${state}`);
-  if (!data.ok && data.detail) console.log(`  server said: ${data.detail}`);
+  process.stdout.write(`[${new Date().toISOString()}] ${state}\n`);
+  if (!data.ok && data.detail) process.stdout.write(`  server said: ${data.detail}\n`);
 }
 
 /**
@@ -406,52 +404,62 @@ async function refresh() {
     inFlight = false;
   }
 
-  if (data.ok) {
+  const merged = mergeUsage(lastGood, data);
+  lastGood = merged.lastGood;
+  lastData = merged.display;
+  const scheduleResult = data.reason === 'rate-limited' ? { ...data, ok: false } : data;
+
+  if (scheduleResult.ok) {
     failures = 0;
     cleanReads += 1;
-    lastGood = data;
-    lastData = data;
-    raiseAlerts(data.gauges);
+    if (!DEMO) raiseAlerts(data.gauges, lastData.gauges);
   } else {
     cleanReads = 0;
     failures += 1;
-    lastData = lastGood
-      ? { ...lastGood, stale: true, reason: data.reason, checkedAt: data.fetchedAt }
-      : data;
   }
 
   const previousFloor = floorSeconds || config.refreshSeconds;
-  floorSeconds = adjustFloor(floorSeconds, data, config.refreshSeconds, cleanReads);
+  floorSeconds = adjustFloor(floorSeconds, scheduleResult, config.refreshSeconds, cleanReads);
   if (floorSeconds !== previousFloor) {
     trace(`pace now one call every ${floorSeconds}s (was ${previousFloor}s)`);
     if (floorSeconds < previousFloor) cleanReads = 0;
   }
-  store.save({
-    failures,
-    floorSeconds,
-    alerts: alertLedger,
-    ...(data.ok ? { lastGood: data } : {})
-  });
+  if (!DEMO) {
+    store.save({
+      failures,
+      floorSeconds,
+      alerts: alertLedger,
+      ...(lastGood && lastGood.ok ? { lastGood } : {})
+    });
+  }
 
   logState(data);
-  if (data.ok && data.gauges.length) setRows(data.gauges.length);
   if (win && !win.isDestroyed()) win.webContents.send('usage', lastData);
   updateTrayTitle();
 
   clearTimeout(refreshTimer);
-  const wait = nextDelay(data, failures, config.refreshSeconds, pacing());
+  const wait = nextDelay(scheduleResult, failures, config.refreshSeconds, pacing());
   // Remembered so a restart cannot skip the wait we just promised.
-  store.save({ nextAllowedAt: data.ok ? 0 : Date.now() + wait });
+  if (!DEMO) store.save({ nextAllowedAt: scheduleResult.ok ? 0 : Date.now() + wait });
   refreshTimer = setTimeout(refresh, wait);
+}
+
+function manualRefresh() {
+  const now = Date.now();
+  if (!manualRefreshAllowed(lastManualRefreshAt, failures, now)) return;
+  lastManualRefreshAt = now;
+  refresh();
 }
 
 function updateTrayTitle() {
   if (!tray || tray.isDestroyed()) return;
-  const session = (lastData.gauges || []).find((g) => g.id === 'session');
-  const label = lastData.ok && session ? `Claude ${session.percent} %` : IDLE_LABEL;
+  const remaining = (lastData.services || []).filter((service) => service.ok)
+    .map((service) => service.summaryRemaining).filter(Number.isFinite);
+  const strictest = remaining.length ? Math.min(...remaining) : null;
+  const label = strictest !== null ? `Marge AI · ${strictest} %` : IDLE_LABEL;
   tray.setToolTip(label);
-  if (process.platform === 'darwin' && lastData.ok && session) {
-    tray.setTitle(` ${session.percent}%`);
+  if (process.platform === 'darwin' && strictest !== null) {
+    tray.setTitle(` ${strictest}%`);
   }
 }
 
@@ -459,15 +467,16 @@ function updateTrayTitle() {
  * Warn before the ceiling, once per level and per reset window. The ledger
  * lives on disk so a restart does not replay every alert you already saw.
  */
-function raiseAlerts(gauges) {
+function raiseAlerts(gauges, aliveGauges = gauges) {
   const thresholds = Array.isArray(config.alertAt) ? config.alertAt : [];
   if (!thresholds.length || !Notification.isSupported()) return;
 
-  const { raise, ledger } = alerts.due(gauges, thresholds, alertLedger);
+  const { raise, ledger } = alerts.due(gauges, thresholds, alertLedger, aliveGauges);
   alertLedger = ledger;
 
   for (const { gauge, level } of raise) {
-    const name = gauge.model || (gauge.kind === 'session' ? T.session : T.allModels);
+    const quota = gauge.model || (gauge.kind === 'session' ? T.session : T.allModels);
+    const name = `${gauge.providerName} · ${quota}`;
     new Notification({
       title: T.notifyTitle(level),
       body: T.notifyBody(name, gauge.percent),
@@ -493,14 +502,14 @@ function refreshLanguage() {
   T = I18N.pick(activeLocale());
   MENU = T.menu;
 }
-const IDLE_LABEL = 'Claude Marge';
+const IDLE_LABEL = 'Marge AI';
 
 /** Rebuilt on every change so the checkbox always shows the real state. */
 function buildMenu() {
   if (!tray || tray.isDestroyed()) return;
   const atLogin = autostart.isEnabled();
   tray.setContextMenu(Menu.buildFromTemplate([
-    { label: MENU.refresh, click: () => refresh() },
+    { label: MENU.refresh, click: () => manualRefresh() },
     { label: MENU.peek, click: () => { show(); setTimeout(scheduleHide, 3000); } },
     { type: 'separator' },
     {
@@ -619,9 +628,11 @@ function openSettings() {
     webPreferences: {
       preload: path.join(__dirname, 'settings-preload.js'),
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      sandbox: true
     }
   });
+  hardenWindow(settingsWin);
   settingsWin.loadFile(path.join(__dirname, 'settings', 'index.html'));
   settingsWin.once('ready-to-show', () => settingsWin.show());
   settingsWin.on('closed', () => { settingsWin = null; });
@@ -667,7 +678,7 @@ if (!app.requestSingleInstanceLock()) app.quit();
 // loses its backoff each time, which is how a rate limit becomes permanent.
 // These lines cost nothing and turn a mystery into a fact.
 function trace(event) {
-  console.log(`[${new Date().toISOString()}] lifecycle: ${event}`);
+  process.stdout.write(`[${new Date().toISOString()}] lifecycle: ${event}\n`);
 }
 app.on('before-quit', () => trace('before-quit'));
 app.on('will-quit', () => trace('will-quit'));
@@ -677,13 +688,17 @@ process.on('uncaughtException', (err) => trace(`uncaught: ${err && err.stack}`))
 process.on('unhandledRejection', (err) => trace(`unhandled rejection: ${err}`));
 
 app.whenReady().then(() => {
+  session.defaultSession.setPermissionCheckHandler(() => false);
+  session.defaultSession.setPermissionRequestHandler((_webContents, _permission, callback) => {
+    callback(false);
+  });
   refreshLanguage();
   trace(`started pid=${process.pid} locale=${app.getLocale()} using=${activeLocale()} menu="${MENU.quit}"`);
   if (process.platform === 'darwin' && app.dock) app.dock.hide();
   createWindow();
   createTray();
 
-  const owed = initialDelay(store.read().nextAllowedAt);
+  const owed = DEMO ? 0 : initialDelay(store.read().nextAllowedAt);
   if (owed > 0) {
     trace(`still owed ${Math.round(owed / 1000)}s of backoff from the last run`);
     refreshTimer = setTimeout(refresh, owed);
@@ -705,20 +720,36 @@ app.whenReady().then(() => {
   for (const event of ['display-added', 'display-removed', 'display-metrics-changed']) {
     screen.on(event, onDisplaysChanged);
   }
-  scheduleUpdateCheck();
+  if (!DEMO) scheduleUpdateCheck();
   // One look shortly after start, once the widget has settled.
-  setTimeout(() => { if (config.checkUpdates !== false) checkForUpdates({ notify: true }); }, 30000);
+  if (!DEMO) {
+    setTimeout(() => {
+      if (config.checkUpdates !== false) checkForUpdates({ notify: true });
+    }, 30000);
+  }
   if (DEMO) show(); // showcase mode: stays open, no cursor needed
 
 });
 
-ipcMain.on('request-refresh', () => refresh());
+ipcMain.on('request-refresh', () => manualRefresh());
+ipcMain.on('set-interactive', (_event, on) => setInteractive(on));
+ipcMain.handle('claude:login', async (event) => {
+  if (!win || win.isDestroyed() || event.sender !== win.webContents) return false;
+  const claude = (lastData.services || []).find((service) => service.id === 'claude');
+  const opened = await startClaudeLogin(claude && claude.reason);
+  if (opened) {
+    setTimeout(manualRefresh, 30000);
+    setTimeout(manualRefresh, 90000);
+  }
+  return opened;
+});
 ipcMain.on('settings:reveal', () => revealConfig());
 ipcMain.handle('settings:load', () => ({ ...config, startAtLogin: autostart.isEnabled() === true }));
 ipcMain.handle('settings:save', (_e, next) => {
   const { startAtLogin, ...stored } = next || {};
-  saveConfig(stored);
-  applyConfig({ ...stored, startAtLogin });
+  const sanitized = sanitizeConfig(stored);
+  saveConfig(sanitized);
+  applyConfig({ ...sanitized, startAtLogin: startAtLogin === true });
   return true;
 });
 ipcMain.handle('settings:displays', () => {
@@ -766,10 +797,21 @@ if (process.env.MARGE_CAPTURE) {
           await new Promise((r) => setTimeout(r, 2500));
           target = settingsWin;
         }
+        const captureService = ['claude', 'codex', 'antigravity']
+          .includes(process.env.MARGE_CAPTURE_SERVICE) ? process.env.MARGE_CAPTURE_SERVICE : null;
+        if ((process.env.MARGE_CAPTURE_EXPANDED || captureService) && target === win) {
+          const selector = captureService
+            ? `.item[data-service="${captureService}"]`
+            : '.item.hot, .item';
+          await target.webContents.executeJavaScript(
+            `document.querySelector('${selector}')?.click()`
+          );
+          await new Promise((r) => setTimeout(r, 350));
+        }
         const image = await target.webContents.capturePage();
         fs.writeFileSync(process.env.MARGE_CAPTURE, image.toPNG());
-        console.log('capture written:', process.env.MARGE_CAPTURE,
-          image.getSize().width + 'x' + image.getSize().height);
+        process.stdout.write(`capture written: ${process.env.MARGE_CAPTURE} ` +
+          `${image.getSize().width}x${image.getSize().height}\n`);
       } catch (err) {
         console.error('capture failed:', err.message);
       }

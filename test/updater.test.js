@@ -3,9 +3,12 @@
    fetched code is broken, so the decisions worth testing are the refusals. */
 
 const assert = require('assert');
+const fs = require('fs');
+const os = require('os');
+const path = require('path');
 const u = require('../src/updater');
 let passed = 0;
-const test = (name, fn) => { fn(); passed++; console.log('  ok  ' + name); };
+const test = (name, fn) => { fn(); passed++; process.stdout.write(`  ok  ${name}\n`); };
 
 const commit = (sha, message = 'A real settings window') => ({
   sha, commit: { message: message + '\n\nbody', author: { date: '2026-08-28T10:05:18Z' } }
@@ -50,6 +53,21 @@ test('a directory without git cannot update itself', () => {
   assert.strictEqual(u.isGitCheckout('/tmp'), false);
 });
 
+test('GitHub repository URLs are derived from the installed origin', () => {
+  assert.strictEqual(u.parseGitHubRepo('https://github.com/acme/marge-ai-widget.git'),
+    'acme/marge-ai-widget');
+  assert.strictEqual(u.parseGitHubRepo('git@github.com:acme/marge-ai-widget.git'),
+    'acme/marge-ai-widget');
+  assert.strictEqual(u.parseGitHubRepo('ssh://git@github.com/acme/marge-ai-widget'),
+    'acme/marge-ai-widget');
+});
+
+test('non-GitHub and malformed origins cannot control the update endpoint', () => {
+  assert.strictEqual(u.parseGitHubRepo('https://example.com/acme/widget.git'), null);
+  assert.strictEqual(u.parseGitHubRepo('https://github.com/acme/widget/extra'), null);
+  assert.strictEqual(u.parseGitHubRepo('file:///tmp/widget'), null);
+});
+
 
 test('running npm needs node on the PATH, not just npm', () => {
   const built = u.pathWith('/opt/homebrew/bin/npm', '/opt/homebrew/bin/node', '/usr/bin:/bin');
@@ -71,4 +89,26 @@ test('a missing node still leaves a usable PATH', () => {
     '/opt/homebrew/bin:/usr/bin');
 });
 
-console.log(`\n${passed} updater tests passed`);
+test('the runtime binary path is platform-specific', () => {
+  assert.strictEqual(u.runtimeExecutable('/runtime', 'linux'),
+    path.join('/runtime', 'node_modules', 'electron', 'dist', 'electron'));
+  assert.strictEqual(u.runtimeExecutable('/runtime', 'darwin'),
+    path.join('/runtime', 'node_modules', 'electron', 'dist',
+      'Electron.app', 'Contents', 'MacOS', 'Electron'));
+});
+
+test('a prepared runtime replaces the old one atomically', () => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), 'marge-update-'));
+  const live = path.join(root, 'runtime');
+  const staging = path.join(root, 'staging');
+  fs.mkdirSync(path.join(live, 'node_modules'), { recursive: true });
+  fs.mkdirSync(path.join(staging, 'node_modules'), { recursive: true });
+  fs.writeFileSync(path.join(live, 'node_modules', 'version'), 'old');
+  fs.writeFileSync(path.join(staging, 'node_modules', 'version'), 'new');
+  u.replaceRuntime(live, staging);
+  assert.strictEqual(fs.readFileSync(path.join(live, 'node_modules', 'version'), 'utf8'), 'new');
+  assert.strictEqual(fs.existsSync(staging), false);
+  fs.rmSync(root, { recursive: true, force: true });
+});
+
+process.stdout.write(`\n${passed} updater tests passed\n`);

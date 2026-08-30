@@ -1,227 +1,104 @@
 'use strict';
-/**
- * Data layer: find the Claude OAuth token wherever the OS keeps it, ask the
- * official usage endpoint, and turn the answer into gauges ready to display.
- *
- * The token is never copied, never cached on disk, and never sent anywhere
- * other than api.anthropic.com.
- */
 
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const https = require('https');
-const { execFileSync } = require('child_process');
+const { fetchClaude, normalizeClaude } = require('./providers/claude');
+const { fetchCodex, normalizeCodex } = require('./providers/codex');
+const { fetchAntigravity, normalizeAntigravity } = require('./providers/antigravity');
+const { flattenGauges } = require('./providers/shared');
 
-const API_HOST = 'api.anthropic.com';
-const API_PATH = '/api/oauth/usage';
-const CRED_FILE = path.join(os.homedir(), '.claude', '.credentials.json');
+const PROVIDERS = [fetchClaude, fetchCodex, fetchAntigravity];
+const MAX_STALE_MS = 24 * 60 * 60 * 1000;
 
-// The Keychain service name changed between Claude Code releases. Try the
-// current one, then the older one, rather than assuming which is installed.
-const KEYCHAIN_SERVICES = ['Claude Code-credentials', 'Claude Code'];
-
-/** Read Claude Code's credentials. Keychain on macOS, file everywhere else. */
-function readCredentials() {
-  if (process.platform === 'darwin') {
-    for (const service of KEYCHAIN_SERVICES) {
-      try {
-        const raw = execFileSync('security', [
-          'find-generic-password', '-a', os.userInfo().username, '-w', '-s', service
-        ], { encoding: 'utf8', timeout: 5000, stdio: ['ignore', 'pipe', 'ignore'] });
-        const parsed = JSON.parse(raw.trim());
-        if (parsed && parsed.claudeAiOauth) return parsed.claudeAiOauth;
-      } catch (_) {
-        // No entry under this name, locked Keychain, or a read refused outside
-        // a GUI session. Try the next name, then the file. The `security`
-        // message is swallowed: it teaches nothing and floods the log.
-      }
-    }
-  }
-  try {
-    const parsed = JSON.parse(fs.readFileSync(CRED_FILE, 'utf8'));
-    return parsed.claudeAiOauth || null;
-  } catch (_) {
-    return null;
-  }
-}
-
-function httpsGetJson(token) {
-  return new Promise((resolve, reject) => {
-    const req = https.request({
-      host: API_HOST,
-      path: API_PATH,
-      method: 'GET',
-      headers: {
-        Authorization: `Bearer ${token}`,
-        'Content-Type': 'application/json',
-        'anthropic-beta': 'oauth-2025-04-20',
-        'User-Agent': 'claude-marge-widget'
-      },
-      timeout: 10000
-    }, (res) => {
-      let body = '';
-      res.on('data', (c) => { body += c; });
-      res.on('end', () => {
-        if (res.statusCode !== 200) {
-          // What the server actually said. Without it, every failure looks the
-          // same from the log, and "rate limited" can hide something else.
-          const err = new Error(`HTTP ${res.statusCode}`);
-          err.status = res.statusCode;
-          err.body = body.slice(0, 300);
-          // The endpoint tells us how long to wait when it throttles us.
-          const after = parseInt(res.headers['retry-after'], 10);
-          if (Number.isFinite(after)) err.retryAfter = after;
-          return reject(err);
-        }
-        try { resolve(JSON.parse(body)); } catch (e) { reject(e); }
-      });
-    });
-    req.on('timeout', () => req.destroy(new Error('timeout')));
-    req.on('error', reject);
-    req.end();
-  });
-}
-
-/** One {utilization, resets_at} block to a whole percentage, or null if absent. */
-function pct(block) {
-  if (!block || block.utilization === null || block.utilization === undefined) return null;
-  return Math.max(0, Math.min(100, Math.round(block.utilization)));
-}
-
-/** Letter shown at the centre of a model's ring. */
-function monogram(name) {
-  const clean = String(name || '').trim();
-  return clean ? clean[0].toUpperCase() : '?';
-}
-
-/**
- * Build the gauge list, in display order:
- *   1. the rolling 5 hour window, the one that cuts you off mid-task
- *   2. the weekly quota across all models
- *   3+. one ring PER MODEL, because the quotas are not the same: Opus,
- *       Sonnet, Fable each carry their own weekly limit.
- *
- * The list is dynamic. An account exposing two limits shows two rings, and a
- * missing limit is never rendered as a misleading zero.
- *
- * Gauges carry structure, not wording: labels are the interface's business,
- * so the same data can be shown in any language.
- */
-function normalize(raw) {
-  const gauges = [];
-
-  if (pct(raw.five_hour) !== null) {
-    gauges.push({
-      id: 'session',
-      kind: 'session',
-      icon: 'claude',
-      percent: pct(raw.five_hour),
-      resetsAt: raw.five_hour.resets_at,
-      resetStyle: 'relative',
-      active: false
-    });
-  }
-
-  if (pct(raw.seven_day) !== null) {
-    gauges.push({
-      id: 'weekly',
-      kind: 'weekly',
-      icon: 'week',
-      percent: pct(raw.seven_day),
-      resetsAt: raw.seven_day.resets_at,
-      resetStyle: 'absolute',
-      active: false
-    });
-  }
-
-  // One ring per model, from either of the two shapes the API uses depending
-  // on the account: seven_day_<model> blocks, and weekly_scoped entries.
-  const seen = new Set();
-  const addModel = (name, percent, resetsAt, active) => {
-    const key = String(name).toLowerCase();
-    if (percent === null || seen.has(key)) return;
-    seen.add(key);
-    gauges.push({
-      id: `model-${key}`,
-      kind: 'model',
-      icon: 'model',
-      monogram: monogram(name),
-      model: name,
-      percent,
-      resetsAt,
-      resetStyle: 'absolute',
-      active: active === true
-    });
-  };
-
-  for (const [key, name] of [['seven_day_opus', 'Opus'], ['seven_day_sonnet', 'Sonnet']]) {
-    if (raw[key]) addModel(name, pct(raw[key]), raw[key].resets_at, false);
-  }
-  for (const limit of raw.limits || []) {
-    const name = limit && limit.kind === 'weekly_scoped' && limit.scope && limit.scope.model
-      ? limit.scope.model.display_name
-      : null;
-    if (name) addModel(name, pct({ utilization: limit.percent }), limit.resets_at, limit.is_active);
-  }
-
-  // Which limit is biting right now: worth pointing out, it is the one that
-  // will cut you off first.
-  const activeLimit = (raw.limits || []).find((l) => l.is_active === true);
-  if (activeLimit) {
-    const group = activeLimit.kind === 'session' ? 'session'
-      : activeLimit.kind === 'weekly_all' ? 'weekly' : null;
-    const g = group && gauges.find((x) => x.id === group);
-    if (g) g.active = true;
-  }
-
+function summary(services, fetchedAt = Date.now(), fresh = true) {
+  const successful = services.filter((service) => service.ok && !service.stale);
+  const failures = services.filter((service) => !service.ok || service.stale);
+  const rateLimited = failures.find((service) => service.reason === 'rate-limited');
+  const retryAfter = failures.map((service) => service.retryAfter)
+    .filter(Number.isFinite).reduce((max, value) => Math.max(max, value), 0);
   return {
-    ok: true,
-    fetchedAt: Date.now(),
-    gauges,
-    extraUsageEnabled: (raw.extra_usage || {}).is_enabled === true
+    ok: fresh ? successful.length > 0 : services.some((service) => service.ok),
+    fetchedAt,
+    services,
+    gauges: flattenGauges(services),
+    reason: rateLimited ? 'rate-limited' : failures[0] && failures[0].reason,
+    ...(retryAfter ? { retryAfter } : {})
   };
 }
 
-/** Turn a failed request into a state a human can act on. */
-function reasonFor(err) {
-  const status = err.status;
-  if (status === 401 || status === 403) return 'unauthorized';
-  if (status === 429) return 'rate-limited';
-  if (status >= 500) return 'server';
-  if (status) return 'server';
-  return 'network';
+function mergeUsage(previous, current, now = Date.now()) {
+  const previousById = new Map((previous && previous.services || [])
+    .filter((service) => service.ok && now - service.fetchedAt <= MAX_STALE_MS)
+    .map((service) => [service.id, service]));
+  const displayServices = current.services.map((service) => {
+    if (service.ok) return service;
+    const prior = previousById.get(service.id);
+    return prior ? {
+      ...prior,
+      stale: true,
+      reason: service.reason,
+      checkedAt: service.fetchedAt,
+      detail: service.detail
+    } : service;
+  });
+  const savedServices = current.services.map((service) =>
+    service.ok ? service : previousById.get(service.id))
+    .filter((service) => service && service.ok);
+  return {
+    display: summary(displayServices, current.fetchedAt, current.ok),
+    lastGood: summary(savedServices, current.fetchedAt, false)
+  };
+}
+
+function demoUsage() {
+  const fetchedAt = Date.now();
+  const claude = normalizeClaude({
+    five_hour: { utilization: 28, resets_at: new Date(fetchedAt + 2.7 * 3600000).toISOString() },
+    seven_day: { utilization: 59, resets_at: new Date(fetchedAt + 4.3 * 86400000).toISOString() },
+    seven_day_opus: { utilization: 76, resets_at: new Date(fetchedAt + 4.3 * 86400000).toISOString() },
+    limits: [], extra_usage: { is_enabled: true }
+  }, fetchedAt);
+  const codex = normalizeCodex({
+    rateLimits: { planType: 'plus' },
+    rateLimitsByLimitId: {
+      codex: {
+        planType: 'plus', limitName: null,
+        primary: { usedPercent: 42, windowDurationMins: 300,
+          resetsAt: Math.floor((fetchedAt + 3.4 * 3600000) / 1000) },
+        secondary: { usedPercent: 35, windowDurationMins: 10080,
+          resetsAt: Math.floor((fetchedAt + 5.8 * 86400000) / 1000) }
+      }
+    },
+    rateLimitResetCredits: { availableCount: 1 }
+  }, fetchedAt);
+  const antigravity = normalizeAntigravity({ response: { groups: [
+    { displayName: 'Gemini', buckets: [
+      { window: '5h', remainingFraction: 0.81, resetTime: fetchedAt + 4.1 * 3600000 },
+      { window: 'weekly', remainingFraction: 0.54, resetTime: fetchedAt + 3.2 * 86400000 }
+    ] },
+    { displayName: 'Other', buckets: [
+      { window: '5h', remainingFraction: 0.67, resetTime: fetchedAt + 3.7 * 3600000 },
+      { window: 'weekly', remainingFraction: 0.32, resetTime: fetchedAt + 3.2 * 86400000 }
+    ] }
+  ] } }, { userStatus: { plan: 'Google AI Pro' } }, fetchedAt);
+  return summary([claude, codex, antigravity], fetchedAt, true);
 }
 
 async function fetchUsage() {
-  const cred = readCredentials();
-  if (!cred || !cred.accessToken) {
-    return { ok: false, reason: 'no-credentials', fetchedAt: Date.now(), gauges: [] };
-  }
-  if (cred.expiresAt && cred.expiresAt < Date.now()) {
-    // Claude Code refreshes this token on its own. We deliberately do not do it
-    // for them: rotating the refresh token would invalidate their session.
-    return { ok: false, reason: 'token-expired', fetchedAt: Date.now(), gauges: [] };
-  }
-  try {
-    return normalize(await httpsGetJson(cred.accessToken));
-  } catch (err) {
-    // Naming the failure precisely matters: answering "cannot reach the API"
-    // when the API answered perfectly well, just to say "slow down", sends
-    // people debugging their network for nothing.
-    return {
-      ok: false,
-      reason: reasonFor(err),
-      retryAfter: err.retryAfter,
-      detail: err.body ? `${err.message} ${err.body}` : err.message,
-      fetchedAt: Date.now(),
-      gauges: []
-    };
-  }
+  if (process.env.MARGE_DEMO === '1') return demoUsage();
+  const services = await Promise.all(PROVIDERS.map(async (provider) => {
+    try { return await provider(); }
+    catch (error) {
+      return {
+        id: 'unknown', name: 'Unknown', icon: 'unknown', ok: false,
+        reason: 'unavailable', fetchedAt: Date.now(), windows: {}, details: [],
+        summaryRemaining: null, detail: error.message
+      };
+    }
+  }));
+  return summary(services, Date.now(), true);
 }
 
-module.exports = { fetchUsage, readCredentials, normalize, reasonFor };
+module.exports = { fetchUsage, mergeUsage, summary, demoUsage, MAX_STALE_MS };
 
 if (require.main === module) {
-  fetchUsage().then((r) => console.log(JSON.stringify(r, null, 2)));
+  fetchUsage().then((result) => process.stdout.write(`${JSON.stringify(result, null, 2)}\n`));
 }

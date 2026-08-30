@@ -9,7 +9,7 @@ const screen1080 = { x: 0, y: 0, width: 1920, height: 1080 };
 const ANCHOR = 0.45;
 const ROWS = 3;
 let passed = 0;
-const test = (name, fn) => { fn(); passed++; console.log('  ok  ' + name); };
+const test = (name, fn) => { fn(); passed++; process.stdout.write(`  ok  ${name}\n`); };
 
 test('the window sits flush against the right edge', () => {
   const b = g.boundsForDisplay(screen1080, ROWS, ANCHOR);
@@ -29,11 +29,11 @@ test('the window always stays on screen, however tall', () => {
   }
 });
 
-test('height follows the number of models', () => {
+test('height follows the number of services', () => {
   const a = g.layout(screen1080, 3);
   const b = g.layout(screen1080, 4);
   assert.ok(b.pillHeight > a.pillHeight);
-  assert.strictEqual(b.pillHeight - a.pillHeight, a.ring + g.G.ringToLabel + a.label + a.rowGap);
+  assert.strictEqual(b.pillHeight - a.pillHeight, a.ring + 8 + a.rowGap);
 });
 
 test('the layout tightens rather than overflowing', () => {
@@ -89,6 +89,13 @@ test('an open widget survives the trip from pill to panel', () => {
   const y = Math.round((band.top + band.bottom) / 2);
   assert.ok(g.insideKeepAlive({ x: 1918, y }, b, ROWS, screen1080), 'over the pill');
   assert.ok(g.insideKeepAlive({ x: 1500, y }, b, ROWS, screen1080), 'over the panel');
+});
+
+test('the lower rows of a tall panel stay interactive', () => {
+  const b = g.boundsForDisplay(screen1080, ROWS, ANCHOR);
+  const cursor = { x: b.x + 100, y: b.y + b.height - 12 };
+  assert.ok(g.insideKeepAlive(cursor, b, ROWS, screen1080),
+    'moving below the pill but inside the panel would close the widget');
 });
 
 test('the widget closes when the cursor really leaves', () => {
@@ -215,4 +222,4 @@ test('placing on the same display twice computes the same rectangle', () => {
     'if this ever drifts, the widget would reposition itself for ever');
 });
 
-console.log(`\n${passed} geometry tests passed`);
+process.stdout.write(`\n${passed} geometry tests passed\n`);

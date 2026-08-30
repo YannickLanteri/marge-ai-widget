@@ -5,7 +5,7 @@
 const assert = require('assert');
 const { due } = require('../src/alerts');
 let passed = 0;
-const test = (name, fn) => { fn(); passed++; console.log('  ok  ' + name); };
+const test = (name, fn) => { fn(); passed++; process.stdout.write(`  ok  ${name}\n`); };
 
 const WINDOW = '2026-09-02T09:59:59Z';
 const gauge = (percent, resetsAt = WINDOW) => ({ id: 'session', kind: 'session', percent, resetsAt });
@@ -49,10 +49,20 @@ test('the ledger forgets quotas the account no longer exposes', () => {
   assert.deepStrictEqual(Object.keys(after.ledger), [], 'the ledger would grow forever');
 });
 
+test('a partial provider outage preserves its alert history', () => {
+  const claude = { ...gauge(83), id: 'claude:session' };
+  const codex = { ...gauge(83), id: 'codex:session' };
+  const first = due([claude, codex], [80], {});
+  const outage = due([codex], [80], first.ledger, [claude, codex]);
+  assert.ok(outage.ledger['claude:session'], 'the failed provider was forgotten');
+  const recovered = due([claude, codex], [80], outage.ledger);
+  assert.strictEqual(recovered.raise.length, 0, 'recovery repeated an alert');
+});
+
 test('a jump straight past both thresholds reports the higher one', () => {
   const { raise } = due([gauge(99)], [80, 95], {});
   assert.strictEqual(raise.length, 1);
   assert.strictEqual(raise[0].level, 95, 'it should not warn about 80 when already past 95');
 });
 
-console.log(`\n${passed} alert tests passed`);
+process.stdout.write(`\n${passed} alert tests passed\n`);

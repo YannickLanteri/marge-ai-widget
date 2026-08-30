@@ -1,0 +1,8 @@
+{
+  "name": "marge-ai-widget-runtime",
+  "version": "0.2.0",
+  "private": true,
+  "dependencies": {
+    "electron": "44.0.0"
+  }
+}

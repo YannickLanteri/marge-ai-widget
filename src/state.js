@@ -10,14 +10,11 @@
  */
 
 const fs = require('fs');
-const os = require('os');
-const path = require('path');
+const paths = require('./paths');
 
 // The override exists so the tests can exercise a real file without touching
 // the user's own state.
-const FILE = process.env.MARGE_STATE_FILE ||
-  path.join(os.homedir(), '.config', 'claude-marge', 'state.json');
-const DIR = path.dirname(FILE);
+const FILE = paths.stateFile();
 const MAX_AGE_MS = 24 * 60 * 60 * 1000;   // older readings are not worth showing
 
 function read() {
@@ -30,13 +27,7 @@ function read() {
 }
 
 function write(state) {
-  try {
-    fs.mkdirSync(DIR, { recursive: true });
-    fs.writeFileSync(FILE, JSON.stringify(state, null, 2));
-    return true;
-  } catch (_) {
-    return false;    // a read-only home must not take the widget down
-  }
+  return paths.writeJson(FILE, state);
 }
 
 /** The stored reading, only if it is recent enough to be worth showing. */
@@ -44,8 +35,18 @@ function restoreLastGood(now = Date.now()) {
   const { lastGood } = read();
   if (!lastGood || !lastGood.fetchedAt) return null;
   if (now - lastGood.fetchedAt > MAX_AGE_MS) return null;
-  if (!Array.isArray(lastGood.gauges) || !lastGood.gauges.length) return null;
-  return lastGood;
+  if (!Array.isArray(lastGood.services) || !lastGood.services.length) return null;
+  const services = lastGood.services.filter((service) =>
+    service && service.ok && Number.isFinite(service.fetchedAt) &&
+    now - service.fetchedAt <= MAX_AGE_MS).map((service) => ({
+    ...service,
+    stale: true,
+    reason: 'loading'
+  }));
+  if (!services.length) return null;
+  const alive = new Set(services.map((service) => service.id));
+  const gauges = (lastGood.gauges || []).filter((gauge) => alive.has(gauge.provider));
+  return { ...lastGood, stale: true, reason: 'loading', services, gauges };
 }
 
 /** Failures carry over, so a restart does not undo the backoff. */

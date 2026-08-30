@@ -7,13 +7,14 @@
  */
 
 const G = {
-  pillWidth: 92,
+  pillWidth: 164,
   windowWidth: 700,
   ringToLabel: 10,
   hotEdge: 4,          // width of the trigger strip, in pixels
   hideGrace: 380,      // grace period before hiding, in ms
-  keepAliveLeft: 460,  // the panel lives to the left of the pill
-  keepAliveMargin: 44
+  keepAliveLeft: 480,  // the panel lives to the left of the pill
+  keepAliveMargin: 44,
+  panelHeight: 620
 };
 
 /**
@@ -30,9 +31,14 @@ const STEPS = [
 ];
 
 function measure(step, rows) {
-  const pill = rows * (step.ring + G.ringToLabel + step.label) +
+  const pill = rows * (step.ring + 8) +
     Math.max(0, rows - 1) * step.rowGap + 2 * step.pillPadding;
-  return { ...step, rows, pillHeight: pill, windowHeight: pill + 2 * step.windowPadding };
+  return {
+    ...step,
+    rows,
+    pillHeight: pill,
+    windowHeight: Math.max(G.panelHeight, pill + 2 * step.windowPadding)
+  };
 }
 
 /** The layout chosen for this many rings on this screen. */
@@ -95,12 +101,18 @@ function inHotZone(cursor, workArea, rows, verticalAnchor) {
 function insideKeepAlive(cursor, winBounds, rows, workArea) {
   const m = layout(workArea || { height: winBounds.height }, rows);
   const pillLeft = winBounds.x + winBounds.width - G.pillWidth;
-  const top = winBounds.y + m.windowPadding;
-  const bottom = top + m.pillHeight;
-  return cursor.x >= pillLeft - G.keepAliveLeft &&
-    cursor.x <= winBounds.x + winBounds.width &&
-    cursor.y >= top - G.keepAliveMargin &&
-    cursor.y <= bottom + G.keepAliveMargin;
+  const insideX = cursor.x >= pillLeft - G.keepAliveLeft &&
+    cursor.x <= winBounds.x + winBounds.width;
+  if (!insideX) return false;
+
+  if (cursor.x < pillLeft) {
+    return cursor.y >= winBounds.y && cursor.y <= winBounds.y + winBounds.height;
+  }
+
+  const pillTop = winBounds.y + m.windowPadding;
+  const pillBottom = pillTop + m.pillHeight;
+  return cursor.y >= pillTop - G.keepAliveMargin &&
+    cursor.y <= pillBottom + G.keepAliveMargin;
 }
 
 /**

@@ -9,7 +9,7 @@
  */
 
 /** @returns {{gauge, level}[]} the alerts to raise now, and the new ledger. */
-function due(gauges, thresholds, ledger) {
+function due(gauges, thresholds, ledger, aliveGauges = gauges) {
   const levels = [...(thresholds || [])].sort((a, b) => b - a);
   const next = { ...(ledger || {}) };
   const raise = [];
@@ -27,7 +27,7 @@ function due(gauges, thresholds, ledger) {
   }
 
   // Forget gauges the account no longer exposes, so the ledger cannot grow forever.
-  const alive = new Set((gauges || []).map((g) => g.id));
+  const alive = new Set((aliveGauges || []).map((g) => g.id));
   for (const id of Object.keys(next)) if (!alive.has(id)) delete next[id];
 
   return { raise, ledger: next };

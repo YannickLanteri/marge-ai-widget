@@ -6,7 +6,7 @@ const assert = require('assert');
 const THEMES = require('../src/themes');
 const FORMAT = require('../src/format');
 let passed = 0;
-const test = (name, fn) => { fn(); passed++; console.log('  ok  ' + name); };
+const test = (name, fn) => { fn(); passed++; process.stdout.write(`  ok  ${name}\n`); };
 
 const NEEDED = ['name', 'dark', 'pill', 'panel', 'face', 'faceHot', 'ink', 'inkDim',
   'track', 'shadow', 'ok', 'warm', 'hot', 'crit', 'ui'];
@@ -127,4 +127,4 @@ test('a radius of zero survives, because Windows 95 means zero', () => {
   assert.strictEqual(THEMES.widgetVars('midnight')['--radius-pill'], '32px');
 });
 
-console.log(`\n${passed} theme and format tests passed`);
+process.stdout.write(`\n${passed} theme and format tests passed\n`);

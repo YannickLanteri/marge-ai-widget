@@ -5,32 +5,78 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 jobs:
   test:
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        node: ['18', '22']
+        node: ['22.12.0', '24']
     runs-on: ${{ matrix.os }}
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: ${{ matrix.node }}
-      # The suite is plain Node: geometry, pacing, quotas, themes, strings.
-      # Skipping the 100 MB Electron download keeps a run under a minute.
+          cache: npm
       - run: npm ci
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-      - run: npm test
+      - run: npm check
 
   shell:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - name: The installer and the command must at least parse
-        run: |
-          bash -n install.sh
-          bash -n uninstall.sh
-          bash -n bin/marge
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - run: shellcheck install.sh uninstall.sh bin/marge bin/run-widget
+
+  security:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.12.0'
+          cache: npm
+      - run: npm ci
+        env:
+          ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
+      - run: npm audit --audit-level=high
+      - run: npm audit --prefix install/runtime --audit-level=high
+
+  electron-smoke:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22.12.0'
+          cache: npm
+      - run: npm ci
+      - run: npm run electron:ensure
+      - name: Capture the real widget on macOS
+        if: runner.os == 'macOS'
+        run: MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/widget.png" npm run demo
+      - name: Capture the real settings window on macOS
+        if: runner.os == 'macOS'
+        run: MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/settings.png" MARGE_CAPTURE_SETTINGS=1 npm run demo
+      - name: Capture the real widget on Linux X11
+        if: runner.os == 'Linux'
+        run: xvfb-run -a env MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/widget.png" npm run demo
+      - name: Capture the real settings window on Linux X11
+        if: runner.os == 'Linux'
+        run: xvfb-run -a env MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/settings.png" MARGE_CAPTURE_SETTINGS=1 npm run demo
+      - run: test -s "$RUNNER_TEMP/widget.png" && test -s "$RUNNER_TEMP/settings.png"
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: electron-smoke-captures-${{ runner.os }}
+          path: |
+            ${{ runner.temp }}/widget.png
+            ${{ runner.temp }}/settings.png

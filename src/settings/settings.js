@@ -7,9 +7,10 @@ const INTERVALS = [2, 5, 10, 15];         // minutes
 const TIME_FORMATS = ['auto', '24', '12'];
 const THRESHOLDS = [50, 70, 80, 90, 95];  // offered marks
 
-const ASTERISK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
-  stroke-width="1.7" stroke-linecap="round">
-  <path d="M12 3.2v17.6M3.2 12h17.6M5.8 5.8l12.4 12.4M18.2 5.8L5.8 18.2"/></svg>`;
+const MARK = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor"
+  stroke-width="1.55" stroke-linecap="round">
+  <circle cx="12" cy="12" r="8.6"/><circle cx="12" cy="12" r="5.3"/>
+  <path d="M12 3.4v3.3M20.6 12h-3.3M12 20.6v-3.3"/></svg>`;
 
 let T;
 let draft = {};
@@ -139,7 +140,7 @@ function paint() {
 
 function labels() {
   const s = T.settings;
-  $('mark').innerHTML = ASTERISK;
+  $('mark').innerHTML = MARK;
   document.title = `${s.title} · ${s.subtitle}`;
   text('title', s.title);
   text('subtitle', s.subtitle);

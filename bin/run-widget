@@ -1,0 +1,46 @@
+#!/usr/bin/env bash
+# Runtime wrapper used by launchd and systemd. It rotates the local diagnostic
+# log before Electron opens it, keeping source installs bounded on disk.
+set -euo pipefail
+
+SOURCE="${BASH_SOURCE[0]}"
+while [ -L "$SOURCE" ]; do
+  SOURCE_DIR="$(cd -P "$(dirname "$SOURCE")" && pwd)"
+  SOURCE="$(readlink "$SOURCE")"
+  case "$SOURCE" in /*) ;; *) SOURCE="$SOURCE_DIR/$SOURCE" ;; esac
+done
+APP_DIR="${MARGE_APP_DIR:-$(cd -P "$(dirname "$SOURCE")/.." && pwd)}"
+LOG="$APP_DIR/widget.log"
+MAX_BYTES="${MARGE_LOG_MAX_BYTES:-1048576}"
+
+case "$MAX_BYTES" in
+  ''|*[!0-9]*) MAX_BYTES=1048576 ;;
+esac
+[ "$MAX_BYTES" -ge 1024 ] || MAX_BYTES=1048576
+
+rotate_log() {
+  [ -f "$LOG" ] || return 0
+  SIZE="$(wc -c < "$LOG" | tr -d ' ')"
+  [ "${SIZE:-0}" -ge "$MAX_BYTES" ] || return 0
+  [ -f "$LOG.1" ] && mv -f "$LOG.1" "$LOG.2"
+  mv -f "$LOG" "$LOG.1"
+}
+
+rotate_log
+[ "${1:-}" = "--rotate-only" ] && exit 0
+
+case "$(uname -s)" in
+  Darwin) ELECTRON_SUFFIX="Electron.app/Contents/MacOS/Electron" ;;
+  Linux) ELECTRON_SUFFIX="electron" ;;
+  *) printf 'marge: unsupported platform\n' >&2; exit 1 ;;
+esac
+
+ELECTRON="$APP_DIR/install/runtime/node_modules/electron/dist/$ELECTRON_SUFFIX"
+[ -x "$ELECTRON" ] || ELECTRON="$APP_DIR/node_modules/electron/dist/$ELECTRON_SUFFIX"
+
+[ -x "$ELECTRON" ] || {
+  printf 'marge: Electron is missing from %s\n' "$APP_DIR" >&2
+  exit 1
+}
+
+exec "$ELECTRON" "$APP_DIR" >> "$LOG" 2>&1

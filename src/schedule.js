@@ -90,14 +90,21 @@ function initialDelay(nextAllowedAt, now = Date.now()) {
 }
 
 /** Should a reveal trigger a fresh call, or is the last read good enough? */
-function shouldRefreshOnReveal(lastGoodAt, failures, now) {
+function shouldRefreshOnReveal(lastGoodAt, failures, now, minAgeSeconds = 300) {
   if (failures > 0) return false;        // already backing off, do not pile on
   if (!lastGoodAt) return true;
-  return (now - lastGoodAt) > 60000;
+  const minimumAge = Math.max(MIN_SECONDS, minAgeSeconds || 300) * 1000;
+  return (now - lastGoodAt) > minimumAge;
+}
+
+function manualRefreshAllowed(lastManualAt, failures, now, minimumSeconds = 30) {
+  if (failures > 0) return false;
+  if (!lastManualAt) return true;
+  return now - lastManualAt >= Math.max(MIN_SECONDS, minimumSeconds) * 1000;
 }
 
 module.exports = {
-  nextDelay, shouldRefreshOnReveal, adjustFloor, initialDelay,
+  nextDelay, shouldRefreshOnReveal, manualRefreshAllowed, adjustFloor, initialDelay,
   MIN_SECONDS, MAX_DELAY_MS, MAX_FAILURES, IDLE_AFTER, IDLE_FACTOR,
   FLOOR_CEILING, DECAY_AFTER
 };

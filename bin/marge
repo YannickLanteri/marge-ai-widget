@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Claude Marge Widget, from the terminal.
+# Marge AI Widget, from the terminal.
 #
 #   marge            start it, or restart it if it is already running
 #   marge stop       quit it until the next login
@@ -9,7 +9,7 @@
 #   marge update     pull, install, test, restart
 #
 # Quitting from the tray menu takes the tray icon with it, so this and the
-# Claude Marge launcher are the ways back.
+# Marge AI launcher are the ways back.
 
 set -euo pipefail
 
@@ -33,21 +33,42 @@ is_mac() { [ "$(uname -s)" = "Darwin" ]; }
 
 start() {
   if is_mac; then
-    launchctl kickstart -k "gui/$(id -u)/$LABEL" 2>/dev/null ||
-      launchctl bootstrap "gui/$(id -u)" "$PLIST"
+    DOMAIN="gui/$(id -u)"
+    if launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1; then
+      launchctl kickstart -k "$DOMAIN/$LABEL"
+    else
+      STARTED=0
+      for _ in 1 2 3 4 5; do
+        if launchctl bootstrap "$DOMAIN" "$PLIST" 2>/dev/null; then
+          STARTED=1
+          break
+        fi
+        sleep 0.4
+      done
+      [ "$STARTED" -eq 1 ] || {
+        echo "marge: launchd could not register $PLIST" >&2
+        exit 1
+      }
+    fi
   else
     systemctl --user restart "$UNIT" 2>/dev/null || {
       echo "systemd did not answer. Is this a graphical session?" >&2
       exit 1
     }
   fi
-  echo "Claude Marge is running. Move the mouse to the right edge of the screen."
+  echo "Marge AI is running. Move the mouse to the right edge of the screen."
 }
 
 stop() {
-  if is_mac; then launchctl bootout "gui/$(id -u)/$LABEL" 2>/dev/null || true
+  if is_mac; then
+    DOMAIN="gui/$(id -u)"
+    launchctl bootout "$DOMAIN/$LABEL" 2>/dev/null || true
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      launchctl print "$DOMAIN/$LABEL" >/dev/null 2>&1 || break
+      sleep 0.2
+    done
   else systemctl --user stop "$UNIT" 2>/dev/null || true; fi
-  echo "Claude Marge stopped. Start it again with: marge"
+  echo "Marge AI stopped. Start it again with: marge"
 }
 
 status() {
@@ -72,20 +93,11 @@ case "${1:-start}" in
     echo "Open the tray icon and choose Settings."
     ;;
   update)
-    # Une mise a jour qui ne trouve pas son depot doit le dire, pas continuer.
     [ -d "$APP_DIR/.git" ] || {
       echo "marge: $APP_DIR n'est pas une copie git, mise a jour impossible" >&2
       exit 1
     }
-    BEFORE="$(git -C "$APP_DIR" rev-parse HEAD)"
-    git -C "$APP_DIR" pull --ff-only
-    ( cd "$APP_DIR" && npm install --no-audit --no-fund >/dev/null && npm test >/dev/null )
-    AFTER="$(git -C "$APP_DIR" rev-parse HEAD)"
-    if [ "$BEFORE" = "$AFTER" ]; then
-      echo "marge: deja a jour ($(git -C "$APP_DIR" log --oneline -1))"
-    else
-      echo "marge: $(git -C "$APP_DIR" log --oneline -1 "$BEFORE" | cut -c1-7) -> $(git -C "$APP_DIR" log --oneline -1 | cut -c1-7)"
-    fi
+    node "$APP_DIR/tools/update.js"
     start
     ;;
   *)

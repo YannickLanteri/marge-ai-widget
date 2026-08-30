@@ -3,9 +3,12 @@
    keeps asking at the same pace, which is how a small problem stays. */
 
 const assert = require('assert');
-const { nextDelay, shouldRefreshOnReveal, adjustFloor, initialDelay, MAX_DELAY_MS } = require('../src/schedule');
+const {
+  nextDelay, shouldRefreshOnReveal, manualRefreshAllowed,
+  adjustFloor, initialDelay, MAX_DELAY_MS
+} = require('../src/schedule');
 let passed = 0;
-const test = (name, fn) => { fn(); passed++; console.log('  ok  ' + name); };
+const test = (name, fn) => { fn(); passed++; process.stdout.write(`  ok  ${name}\n`); };
 
 test('a success keeps the configured pace', () => {
   assert.strictEqual(nextDelay({ ok: true }, 0, 120, { jitter: 0 }), 120000);
@@ -55,8 +58,24 @@ test('hovering does not refresh while backing off', () => {
 test('hovering refreshes stale data, not fresh data', () => {
   const now = Date.now();
   assert.strictEqual(shouldRefreshOnReveal(now - 5000, 0, now), false);
-  assert.strictEqual(shouldRefreshOnReveal(now - 120000, 0, now), true);
+  assert.strictEqual(shouldRefreshOnReveal(now - 120000, 0, now), false,
+    'hover must not bypass the default five-minute pace');
+  assert.strictEqual(shouldRefreshOnReveal(now - 301000, 0, now), true);
   assert.strictEqual(shouldRefreshOnReveal(null, 0, now), true, 'first reveal must fetch');
+});
+
+test('hover follows a custom refresh interval', () => {
+  const now = Date.now();
+  assert.strictEqual(shouldRefreshOnReveal(now - 119000, 0, now, 120), false);
+  assert.strictEqual(shouldRefreshOnReveal(now - 121000, 0, now, 120), true);
+});
+
+test('manual refresh cannot hammer providers or bypass backoff', () => {
+  const now = Date.now();
+  assert.strictEqual(manualRefreshAllowed(0, 0, now), true);
+  assert.strictEqual(manualRefreshAllowed(now - 5000, 0, now), false);
+  assert.strictEqual(manualRefreshAllowed(now - 31000, 0, now), true);
+  assert.strictEqual(manualRefreshAllowed(now - 31000, 1, now), false);
 });
 
 
@@ -119,4 +138,4 @@ test('a restart does not skip the wait the last run promised', () => {
     'a stale timestamp must not strand the widget for an hour');
 });
 
-console.log(`\n${passed} schedule tests passed`);
+process.stdout.write(`\n${passed} schedule tests passed\n`);

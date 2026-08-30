@@ -6,8 +6,7 @@
   <key>Label</key><string>com.claudemarge.widget</string>
   <key>ProgramArguments</key>
   <array>
-    <string>__APP_DIR__/node_modules/electron/dist/Electron.app/Contents/MacOS/Electron</string>
-    <string>__APP_DIR__</string>
+    <string>__APP_DIR__/bin/run-widget</string>
   </array>
   <key>RunAtLoad</key><true/>
   <!-- Restart after a crash, but honour a deliberate Quit from the menu. -->
@@ -15,7 +14,5 @@
   <dict>
     <key>SuccessfulExit</key><false/>
   </dict>
-  <key>StandardOutPath</key><string>__APP_DIR__/widget.log</string>
-  <key>StandardErrorPath</key><string>__APP_DIR__/widget.log</string>
 </dict>
 </plist>

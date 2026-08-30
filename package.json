@@ -1,28 +1,73 @@
 {
-  "name": "claude-marge-widget",
-  "version": "0.1.0",
-  "description": "Claude Marge Widget : la marge qui te reste sur Claude Max, au bord de l'ecran",
+  "name": "marge-ai-widget",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Claude, Codex and Antigravity quota widget for macOS and Linux",
   "main": "src/main.js",
   "scripts": {
     "start": "electron .",
     "demo": "electron . --demo",
     "usage": "node src/usage.js",
-    "test": "node test/geometry.test.js && node test/usage.test.js && node test/schedule.test.js && node test/alerts.test.js && node test/state.test.js && node test/i18n.test.js && node test/updater.test.js && node test/themes.test.js"
+    "electron:ensure": "node tools/ensure-electron.js",
+    "test": "node test/run.js",
+    "test:shell": "bash -n install.sh && bash -n uninstall.sh && bash -n bin/marge && bash -n bin/run-widget",
+    "check": "npm test && npm run test:shell",
+    "dist": "electron-builder --publish never",
+    "dist:mac": "electron-builder --mac --publish never",
+    "dist:linux": "electron-builder --linux --publish never"
   },
   "author": "Ulrich Rozier",
   "license": "MIT",
+  "homepage": "https://github.com/YannickLanteri/marge-ai-widget#readme",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YannickLanteri/marge-ai-widget.git"
+  },
+  "bugs": {
+    "url": "https://github.com/YannickLanteri/marge-ai-widget/issues"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  },
+  "keywords": [
+    "antigravity",
+    "claude",
+    "codex",
+    "electron",
+    "quota",
+    "widget"
+  ],
   "devDependencies": {
-    "electron": "^33.2.0"
+    "@electron/fuses": "2.1.3",
+    "electron": "44.0.0",
+    "electron-builder": "26.15.3"
   },
   "build": {
-    "appId": "com.claudemarge.widget",
-    "productName": "Claude Marge Widget",
+    "appId": "io.github.yannicklanteri.margeaiwidget",
+    "productName": "Marge AI Widget",
+    "asar": true,
+    "artifactName": "Marge-AI-Widget-${version}-${os}-${arch}.${ext}",
+    "publish": null,
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": true,
+      "resetAdHocDarwinSignature": true
+    },
     "files": [
       "src/**/*",
-      "package.json"
+      "package.json",
+      "LICENSE",
+      "THIRD_PARTY_NOTICES"
     ],
     "mac": {
       "category": "public.app-category.utilities",
+      "icon": "build/icon.png",
+      "minimumSystemVersion": "13.0",
       "target": [
         "dmg",
         "zip"
@@ -32,15 +77,11 @@
       }
     },
     "linux": {
+      "icon": "build/icon.png",
       "target": [
         "AppImage"
       ],
       "category": "Utility"
     }
-  },
-  "repository": {
-    "type": "git",
-    "url": "https://github.com/Ulrichfr/Claude-Marge-Widget.git"
-  },
-  "homepage": "https://github.com/Ulrichfr/Claude-Marge-Widget"
+  }
 }

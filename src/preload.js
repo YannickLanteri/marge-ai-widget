@@ -7,5 +7,8 @@ contextBridge.exposeInMainWorld('widget', {
   onReveal: (fn) => ipcRenderer.on('reveal', (_e, v) => fn(v)),
   onPanel: (fn) => ipcRenderer.on('panel', (_e, v) => fn(v)),
   onCursor: (fn) => ipcRenderer.on('cursor', (_e, p) => fn(p)),
-  requestRefresh: () => ipcRenderer.send('request-refresh')
+  canOpenClaudeLogin: process.platform === 'darwin',
+  openClaudeLogin: () => ipcRenderer.invoke('claude:login'),
+  requestRefresh: () => ipcRenderer.send('request-refresh'),
+  setInteractive: (on) => ipcRenderer.send('set-interactive', on === true)
 });

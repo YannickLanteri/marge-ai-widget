@@ -12,8 +12,12 @@ process.env.MARGE_STATE_FILE = path.join(TMP, 'state.json');
 const store = require('../src/state');
 
 let passed = 0;
-const test = (name, fn) => { fn(); passed++; console.log('  ok  ' + name); };
-const reading = (at) => ({ fetchedAt: at, gauges: [{ id: 'session', percent: 9 }] });
+const test = (name, fn) => { fn(); passed++; process.stdout.write(`  ok  ${name}\n`); };
+const reading = (at) => ({
+  fetchedAt: at,
+  services: [{ id: 'claude', ok: true, fetchedAt: at }],
+  gauges: [{ id: 'claude:session', provider: 'claude', percent: 9 }]
+});
 
 test('nothing stored yet is not an error', () => {
   assert.strictEqual(store.restoreLastGood(), null);
@@ -23,7 +27,12 @@ test('nothing stored yet is not an error', () => {
 test('a recent reading comes back, so a restart shows numbers at once', () => {
   const now = Date.now();
   store.save({ lastGood: reading(now - 60000) });
-  assert.ok(store.restoreLastGood(now), 'the reading was lost');
+  const restored = store.restoreLastGood(now);
+  assert.ok(restored, 'the reading was lost');
+  assert.strictEqual(restored.stale, true);
+  assert.strictEqual(restored.services[0].stale, true,
+    'the renderer would present a restored service as fresh');
+  assert.strictEqual(restored.services[0].reason, 'loading');
 });
 
 test('a reading older than a day is dropped rather than shown as current', () => {
@@ -33,7 +42,7 @@ test('a reading older than a day is dropped rather than shown as current', () =>
 });
 
 test('an empty reading is never restored', () => {
-  store.save({ lastGood: { fetchedAt: Date.now(), gauges: [] } });
+  store.save({ lastGood: { fetchedAt: Date.now(), services: [], gauges: [] } });
   assert.strictEqual(store.restoreLastGood(), null);
 });
 
@@ -59,4 +68,4 @@ test('saving merges rather than replacing', () => {
 });
 
 fs.rmSync(TMP, { recursive: true, force: true });
-console.log(`\n${passed} state tests passed`);
+process.stdout.write(`\n${passed} state tests passed\n`);

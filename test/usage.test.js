@@ -1,11 +1,10 @@
 'use strict';
-/* Normalisation. The API answer varies from account to account; what matters
-   is that a missing quota never turns into a displayed zero. */
 
 const assert = require('assert');
-const { normalize } = require('../src/usage');
+const { normalizeClaude, reasonFor } = require('../src/providers/claude');
+const { mergeUsage, summary, demoUsage, MAX_STALE_MS } = require('../src/usage');
 let passed = 0;
-const test = (name, fn) => { fn(); passed++; console.log('  ok  ' + name); };
+const test = (name, fn) => { fn(); passed++; process.stdout.write(`  ok  ${name}\n`); };
 
 const base = {
   five_hour: { utilization: 73.4, resets_at: '2026-08-28T13:39:59Z' },
@@ -16,74 +15,78 @@ const base = {
   extra_usage: { is_enabled: false }
 };
 
-test('percentages are rounded and clamped', () => {
-  const r = normalize({ ...base, five_hour: { utilization: 73.4, resets_at: null } });
-  assert.strictEqual(r.gauges[0].percent, 73);
-  const over = normalize({ ...base, five_hour: { utilization: 140, resets_at: null } });
-  assert.strictEqual(over.gauges[0].percent, 100);
+test('Claude is normalized to used and remaining percentages', () => {
+  const result = normalizeClaude(base);
+  assert.strictEqual(result.windows.session.usedPercent, 73);
+  assert.strictEqual(result.windows.session.remainingPercent, 27);
+  assert.strictEqual(result.windows.weekly.remainingPercent, 88);
 });
 
-test('a missing quota produces no ring', () => {
-  const r = normalize({ ...base, seven_day: null });
-  assert.strictEqual(r.gauges.filter((x) => x.id === 'weekly').length, 0);
-  assert.ok(r.gauges.every((x) => x.percent !== null));
+test('a missing Claude window stays missing', () => {
+  const result = normalizeClaude({ ...base, five_hour: null });
+  assert.strictEqual(result.windows.session, null);
+  assert.ok(result.details.every((item) => Number.isFinite(item.remainingPercent)));
 });
 
-test('every model gets its own ring', () => {
-  const r = normalize({
+test('the strictest model quota becomes the service headline', () => {
+  const result = normalizeClaude({
     ...base,
     seven_day_opus: { utilization: 94, resets_at: '2026-09-02T09:59:59Z' },
     seven_day_sonnet: { utilization: 30, resets_at: '2026-09-02T09:59:59Z' }
   });
-  const models = r.gauges.filter((x) => x.kind === 'model').map((x) => x.model);
-  assert.deepStrictEqual(models, ['Opus', 'Sonnet']);
-  assert.deepStrictEqual(r.gauges.filter((x) => x.kind === 'model').map((x) => x.monogram), ['O', 'S']);
+  assert.strictEqual(result.summaryRemaining, 6);
+  assert.strictEqual(result.windows.weekly.label, 'Opus');
 });
 
-test('a model exposed through limits[] is picked up', () => {
-  const r = normalize({
-    ...base,
-    limits: [{ kind: 'weekly_scoped', percent: 6, resets_at: '2026-09-02T09:59:59Z',
-      is_active: false, scope: { model: { display_name: 'Fable' } } }]
-  });
-  const fable = r.gauges.find((x) => x.model === 'Fable');
-  assert.ok(fable, 'Fable missing');
-  assert.strictEqual(fable.percent, 6);
-});
-
-test('a model present in both shapes appears once', () => {
-  const r = normalize({
+test('duplicate model shapes create one detail only', () => {
+  const result = normalizeClaude({
     ...base,
     seven_day_opus: { utilization: 94, resets_at: null },
     limits: [{ kind: 'weekly_scoped', percent: 94, resets_at: null, is_active: true,
       scope: { model: { display_name: 'Opus' } } }]
   });
-  assert.strictEqual(r.gauges.filter((x) => x.model === 'Opus').length, 1);
+  assert.strictEqual(result.details.filter((item) => item.label === 'Opus').length, 1);
 });
 
-test('the biting limit is flagged', () => {
-  const r = normalize({
-    ...base,
-    limits: [{ kind: 'weekly_all', percent: 12, is_active: true, resets_at: null, scope: null }]
-  });
-  assert.strictEqual(r.gauges.find((x) => x.id === 'weekly').active, true);
-  assert.strictEqual(r.gauges.find((x) => x.id === 'session').active, false);
+test('provider failures keep only recent real values as stale', () => {
+  const now = Date.now();
+  const previous = summary([normalizeClaude(base, now - 60000)], now - 60000, false);
+  const failed = summary([{ id: 'claude', name: 'Claude', icon: 'claude', ok: false,
+    reason: 'network', fetchedAt: now, windows: {}, details: [], summaryRemaining: null }], now, true);
+  const merged = mergeUsage(previous, failed, now);
+  assert.strictEqual(merged.display.services[0].stale, true);
+  assert.strictEqual(merged.display.services[0].summaryRemaining, 27);
+  const expired = mergeUsage(previous, failed, now + MAX_STALE_MS + 1);
+  assert.strictEqual(expired.display.services[0].ok, false);
 });
 
-test('an empty response does not break normalisation', () => {
-  const r = normalize({});
-  assert.strictEqual(r.ok, true);
-  assert.deepStrictEqual(r.gauges, []);
+test('raw provider diagnostics are never retained in the last-good cache', () => {
+  const now = Date.now();
+  const failed = {
+    id: 'claude', name: 'Claude', icon: 'claude', ok: false,
+    reason: 'network', fetchedAt: now, windows: {}, details: [], summaryRemaining: null,
+    detail: 'private upstream response'
+  };
+  const codex = {
+    id: 'codex', name: 'Codex', icon: 'codex', ok: true,
+    fetchedAt: now, windows: {}, details: [], summaryRemaining: 80
+  };
+  const merged = mergeUsage(null, summary([failed, codex], now, true), now);
+  assert.deepStrictEqual(merged.lastGood.services.map((service) => service.id), ['codex']);
+  assert.ok(!JSON.stringify(merged.lastGood).includes('private upstream response'));
 });
 
-const { reasonFor } = require('../src/usage');
+test('the demo always contains exactly the three requested services', () => {
+  assert.deepStrictEqual(demoUsage().services.map((service) => service.id),
+    ['claude', 'codex', 'antigravity']);
+});
 
-test('a failure is named for what it is, not blamed on the network', () => {
+test('Claude failures are named precisely', () => {
   assert.strictEqual(reasonFor({ status: 429 }), 'rate-limited');
   assert.strictEqual(reasonFor({ status: 401 }), 'unauthorized');
-  assert.strictEqual(reasonFor({ status: 403 }), 'unauthorized');
   assert.strictEqual(reasonFor({ status: 503 }), 'server');
-  assert.strictEqual(reasonFor({}), 'network', 'only a real transport failure is a network error');
+  assert.strictEqual(reasonFor({ message: 'timeout' }), 'timeout');
+  assert.strictEqual(reasonFor({}), 'network');
 });
 
-console.log(`\n${passed} normalisation tests passed`);
+process.stdout.write(`\n${passed} multi-provider usage tests passed\n`);

@@ -18,7 +18,7 @@ import subprocess, time, re, sys
 WINDOW = int(sys.argv[1]) if len(sys.argv) > 1 else 240
 
 def pids():
-    out = subprocess.run(["pgrep", "-f", r"\.claude-marge"],
+    out = subprocess.run(["pgrep", "-f", r"(\.marge-ai-widget|Marge AI Widget)"],
                          capture_output=True, text=True).stdout.split()
     return [p for p in out if p.isdigit()]
 

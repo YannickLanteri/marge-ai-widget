@@ -12,9 +12,7 @@ const fs = require('fs');
 const path = require('path');
 const { execFile } = require('child_process');
 
-const REPO = 'Ulrichfr/Claude-Marge-Widget';
 const BRANCH = 'main';
-const API = `https://api.github.com/repos/${REPO}/commits/${BRANCH}`;
 
 function run(cmd, args, opts = {}) {
   return new Promise((resolve, reject) => {
@@ -52,6 +50,17 @@ function compare(localSha, remote) {
   return { state: 'available', remote };
 }
 
+/** Accept the common HTTPS and SSH GitHub remote forms, nothing else. */
+function parseGitHubRepo(remoteUrl) {
+  const value = String(remoteUrl || '').trim().replace(/\/$/, '').replace(/\.git$/, '');
+  const match = value.match(
+    /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([^/]+)\/([^/]+)$/i
+  );
+  if (!match || !/^[A-Za-z0-9_.-]+$/.test(match[1]) ||
+      !/^[A-Za-z0-9_.-]+$/.test(match[2])) return null;
+  return `${match[1]}/${match[2]}`;
+}
+
 // --- Git side ----------------------------------------------------------------
 
 const isGitCheckout = (dir) => fs.existsSync(path.join(dir, '.git'));
@@ -66,13 +75,23 @@ async function isDirty(dir) {
   catch (_) { return true; }
 }
 
-function fetchRemote() {
+async function originRepo(dir) {
+  try {
+    return parseGitHubRepo(await run('git', ['-C', dir, 'remote', 'get-url', 'origin']));
+  } catch (_) {
+    return null;
+  }
+}
+
+function fetchRemote(repo) {
+  if (!repo) return Promise.resolve(null);
+  const [owner, name] = repo.split('/').map(encodeURIComponent);
   return new Promise((resolve) => {
     const https = require('https');
     const req = https.request({
       host: 'api.github.com',
-      path: `/repos/${REPO}/commits/${BRANCH}`,
-      headers: { 'User-Agent': 'claude-marge-widget', Accept: 'application/vnd.github+json' },
+      path: `/repos/${owner}/${name}/commits/${BRANCH}`,
+      headers: { 'User-Agent': 'marge-ai-widget', Accept: 'application/vnd.github+json' },
       timeout: 12000
     }, (res) => {
       let body = '';
@@ -90,9 +109,11 @@ function fetchRemote() {
 
 async function check(dir) {
   if (!isGitCheckout(dir)) return { state: 'not-a-checkout', remote: null };
-  const [local, remote] = await Promise.all([localSha(dir), fetchRemote()]);
+  const repo = await originRepo(dir);
+  if (!repo) return { state: 'unknown', remote: null, local: await localSha(dir) };
+  const [local, remote] = await Promise.all([localSha(dir), fetchRemote(repo)]);
   const result = compare(local, remote);
-  return { ...result, local, localShort: local ? local.slice(0, 7) : null };
+  return { ...result, repo, local, localShort: local ? local.slice(0, 7) : null };
 }
 
 // --- Applying ----------------------------------------------------------------
@@ -125,6 +146,63 @@ async function findNpm() {
   return { npm, env: { ...process.env, PATH: pathWith(npm, node, process.env.PATH) } };
 }
 
+function runtimeExecutable(runtimeDir, platform = process.platform) {
+  const suffix = platform === 'darwin'
+    ? path.join('Electron.app', 'Contents', 'MacOS', 'Electron')
+    : 'electron';
+  return path.join(runtimeDir, 'node_modules', 'electron', 'dist', suffix);
+}
+
+async function prepareRuntime(dir, npm, execPath) {
+  const live = path.join(dir, 'install', 'runtime');
+  const staging = fs.mkdtempSync(path.join(path.dirname(live), '.runtime-update-'));
+  try {
+    for (const file of ['package.json', 'package-lock.json']) {
+      fs.copyFileSync(path.join(live, file), path.join(staging, file));
+    }
+    await run(npm.npm, [
+      'ci', '--prefix', staging, '--foreground-scripts',
+      '--no-audit', '--no-fund', '--silent'
+    ], { cwd: dir, env: npm.env });
+
+    const binary = runtimeExecutable(staging);
+    const verify = () => run(binary, ['-e', 'process.exit(0)'], {
+      env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }, timeout: 30000
+    });
+    try {
+      await verify();
+    } catch (_) {
+      await run(execPath, [path.join(staging, 'node_modules', 'electron', 'install.js')], {
+        cwd: path.join(staging, 'node_modules', 'electron'),
+        env: { ...process.env, ELECTRON_RUN_AS_NODE: '1' }
+      });
+      await verify();
+    }
+    return { live, staging, binary };
+  } catch (error) {
+    fs.rmSync(staging, { recursive: true, force: true });
+    throw error;
+  }
+}
+
+function replaceRuntime(live, staging) {
+  const current = path.join(live, 'node_modules');
+  const incoming = path.join(staging, 'node_modules');
+  const backup = `${current}.rollback-${process.pid}`;
+  if (!fs.existsSync(incoming) || fs.existsSync(backup)) {
+    throw new Error('Runtime swap is not safe');
+  }
+  if (fs.existsSync(current)) fs.renameSync(current, backup);
+  try {
+    fs.renameSync(incoming, current);
+  } catch (error) {
+    if (fs.existsSync(backup)) fs.renameSync(backup, current);
+    throw error;
+  }
+  fs.rmSync(backup, { recursive: true, force: true });
+  fs.rmSync(staging, { recursive: true, force: true });
+}
+
 /**
  * Run the test suite with whatever runtime we have. Electron doubles as Node
  * when told to, which keeps this working on a machine where node itself is not
@@ -148,9 +226,11 @@ async function runTests(dir, execPath) {
  */
 async function apply(dir, execPath, onStep = () => {}) {
   if (!isGitCheckout(dir)) return { ok: false, reason: 'not-a-checkout' };
+  if (!await originRepo(dir)) return { ok: false, reason: 'unsupported-remote' };
   if (await isDirty(dir)) return { ok: false, reason: 'dirty' };
 
   const previous = await localSha(dir);
+  let prepared = null;
   try {
     onStep('fetching');
     await run('git', ['-C', dir, 'fetch', '--quiet', 'origin', BRANCH]);
@@ -161,17 +241,20 @@ async function apply(dir, execPath, onStep = () => {}) {
 
     onStep('installing');
     const npm = await findNpm();
-    if (npm) {
-      await run(npm.npm, ['install', '--no-audit', '--no-fund', '--silent'],
-        { cwd: dir, env: npm.env });
-    }
+    if (!npm) throw new Error('npm was not found');
+    prepared = await prepareRuntime(dir, npm, execPath);
 
     onStep('testing');
-    await runTests(dir, execPath);
+    await runTests(dir, prepared.binary);
+    replaceRuntime(prepared.live, prepared.staging);
+    prepared = null;
 
-    return { ok: true, changed: true, sha: updated, short: updated.slice(0, 7), npmMissing: !npm };
+    return { ok: true, changed: true, sha: updated, short: updated.slice(0, 7) };
   } catch (err) {
     onStep('rolling-back');
+    if (prepared && fs.existsSync(prepared.staging)) {
+      fs.rmSync(prepared.staging, { recursive: true, force: true });
+    }
     try {
       if (previous) await run('git', ['-C', dir, 'reset', '--quiet', '--hard', previous]);
     } catch (_) {
@@ -182,7 +265,8 @@ async function apply(dir, execPath, onStep = () => {}) {
 }
 
 module.exports = {
-  REPO, BRANCH, API,
+  BRANCH,
   parseRemote, compare, isGitCheckout, localSha, isDirty,
-  fetchRemote, check, apply, runTests, findNpm, pathWith
+  parseGitHubRepo, originRepo, fetchRemote, check, apply, runTests, findNpm, pathWith,
+  runtimeExecutable, replaceRuntime
 };
