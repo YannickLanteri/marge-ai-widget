@@ -25,7 +25,7 @@ jobs:
       - run: npm ci
         env:
           ELECTRON_SKIP_BINARY_DOWNLOAD: '1'
-      - run: npm check
+      - run: npm run check
 
   shell:
     runs-on: ubuntu-latest
@@ -69,10 +69,10 @@ jobs:
         run: MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/settings.png" MARGE_CAPTURE_SETTINGS=1 npm run demo
       - name: Capture the real widget on Linux X11
         if: runner.os == 'Linux'
-        run: xvfb-run -a env MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/widget.png" npm run demo
+        run: xvfb-run -a env MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/widget.png" npm run demo -- --no-sandbox
       - name: Capture the real settings window on Linux X11
         if: runner.os == 'Linux'
-        run: xvfb-run -a env MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/settings.png" MARGE_CAPTURE_SETTINGS=1 npm run demo
+        run: xvfb-run -a env MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/settings.png" MARGE_CAPTURE_SETTINGS=1 npm run demo -- --no-sandbox
       - run: test -s "$RUNNER_TEMP/widget.png" && test -s "$RUNNER_TEMP/settings.png"
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:

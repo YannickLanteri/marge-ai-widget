@@ -23,7 +23,7 @@ case "$APP_DIR" in
   *) printf 'Installation directory must be absolute: %s\n' "$APP_DIR" >&2; exit 1 ;;
 esac
 case "$APP_DIR" in
-  *$'\n'*|*$'\r'*|*'<'*|*'>'*|*'&'*|*'|'*|*'\'*)
+  *$'\n'*|*$'\r'*|*'<'*|*'>'*|*'&'*|*'|'*|*\\*)
     printf 'Installation directory contains unsupported characters.\n' >&2
     exit 1
     ;;

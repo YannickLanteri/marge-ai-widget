@@ -58,7 +58,7 @@ case "$APP_DIR" in
   *) fail "The installation directory must be absolute: $APP_DIR" ;;
 esac
 case "$APP_DIR" in
-  *$'\n'*|*$'\r'*|*'<'*|*'>'*|*'&'*|*'|'*|*'\'*)
+  *$'\n'*|*$'\r'*|*'<'*|*'>'*|*'&'*|*'|'*|*\\*)
     fail "The installation directory contains unsupported characters."
     ;;
 esac

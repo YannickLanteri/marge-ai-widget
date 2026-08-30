@@ -37,6 +37,9 @@ test('installer refuses broad destructive targets', () => {
   const result = run(install, ['--local', root], { MARGE_DIR: process.env.HOME });
   assert.notStrictEqual(result.status, 0);
   assert.match(result.stderr, /Unsafe installation directory/);
+  const escaped = run(install, ['--local', root], { MARGE_DIR: '/tmp/marge\\unsafe' });
+  assert.notStrictEqual(escaped.status, 0);
+  assert.match(escaped.stderr, /unsupported characters/);
 });
 
 test('local snapshots exclude common credentials and private configuration', () => {
