@@ -87,7 +87,9 @@ fi
 info "Node: v$NODE_VERSION"
 
 if [ "$MODE" = local ]; then
-  [ -n "$SOURCE_DIR" ] && [ -f "$SOURCE_DIR/package.json" ] || fail "Invalid local source: $SOURCE_DIR"
+  if [ -z "$SOURCE_DIR" ] || [ ! -f "$SOURCE_DIR/package.json" ]; then
+    fail "Invalid local source: $SOURCE_DIR"
+  fi
   SOURCE_DIR="$(cd -P "$SOURCE_DIR" && pwd)"
   info "Source: local snapshot"
 else
