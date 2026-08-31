@@ -35,6 +35,7 @@ const {
 let rows = 3;
 const DEMO = process.env.MARGE_DEMO === '1' || process.argv.includes('--demo');
 const CAPTURE = Boolean(process.env.MARGE_CAPTURE);
+const CAPTURE_VERIFY_ONLY = process.env.MARGE_CAPTURE_VERIFY_ONLY === '1';
 
 // CI and documentation may start two short-lived Electron instances in quick
 // succession. Give each explicit capture profile its own Chromium data path so
@@ -797,7 +798,7 @@ ipcMain.handle('settings:reset', () => {
 // Control capture: render the window off screen and quit. Used to check the
 // real rendering on a machine with no compositor, or in CI.
 if (CAPTURE) {
-  // A capture that exits before writing its PNG must fail the shell step.
+  // A smoke run that exits before writing its artifact must fail the shell step.
   process.exitCode = 1;
   app.whenReady().then(() => {
     setTimeout(async () => {
@@ -825,10 +826,34 @@ if (CAPTURE) {
           }
           await new Promise((r) => setTimeout(r, 350));
         }
-        const image = await target.webContents.capturePage();
-        fs.writeFileSync(process.env.MARGE_CAPTURE, image.toPNG());
-        process.stdout.write(`capture written: ${process.env.MARGE_CAPTURE} ` +
-          `${image.getSize().width}x${image.getSize().height}\n`);
+        if (CAPTURE_VERIFY_ONLY) {
+          const settings = target === settingsWin;
+          const verification = await target.webContents.executeJavaScript(settings
+            ? `(() => ({
+                ready: document.readyState === 'complete',
+                themes: document.querySelectorAll('#themes > *').length,
+                language: Boolean(document.querySelector('#language')?.value),
+                save: Boolean(document.querySelector('#save')?.textContent.trim())
+              }))()`
+            : `(() => ({
+                ready: document.readyState === 'complete',
+                items: document.querySelectorAll('#pill .item').length,
+                panel: Boolean(document.querySelector('#panel')),
+                width: Math.round(document.querySelector('#pill')?.getBoundingClientRect().width || 0)
+              }))()`);
+          const valid = settings
+            ? verification.ready && verification.themes > 0 && verification.language && verification.save
+            : verification.ready && verification.items === 3 && verification.panel && verification.width > 0;
+          if (!valid) throw new Error(`render verification failed: ${JSON.stringify(verification)}`);
+          fs.writeFileSync(process.env.MARGE_CAPTURE,
+            `${JSON.stringify({ mode: settings ? 'settings' : 'widget', ...verification })}\n`);
+          process.stdout.write(`render verified: ${process.env.MARGE_CAPTURE}\n`);
+        } else {
+          const image = await target.webContents.capturePage();
+          fs.writeFileSync(process.env.MARGE_CAPTURE, image.toPNG());
+          process.stdout.write(`capture written: ${process.env.MARGE_CAPTURE} ` +
+            `${image.getSize().width}x${image.getSize().height}\n`);
+        }
       } catch (err) {
         process.stderr.write(`capture failed: ${err.message}\n`);
         app.exit(1);

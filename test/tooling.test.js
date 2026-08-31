@@ -35,6 +35,9 @@ test('documentation captures are reproducible from a neutral local template', ()
   assert.match(captureSource, /--user-data-dir=/);
   assert.match(mainSource, /!CAPTURE && !app\.requestSingleInstanceLock\(\)/);
   assert.match(mainSource, /app\.setPath\('userData', captureUserData\)/);
+  assert.match(mainSource, /MARGE_CAPTURE_VERIFY_ONLY/);
+  assert.match(mainSource, /verification\.items === 3/);
+  assert.match(mainSource, /verification\.themes > 0/);
   assert.match(mainSource, /capture failed:[\s\S]+app\.exit\(1\)/);
   assert.deepStrictEqual(pngSize(path.join(root, 'docs', 'hero.png')),
     { width: 1800, height: 1100 });
