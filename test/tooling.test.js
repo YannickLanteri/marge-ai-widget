@@ -29,9 +29,13 @@ test('documentation captures are reproducible from a neutral local template', ()
   assert.strictEqual(app.scripts['docs:capture'], 'electron tools/capture-docs.js');
   assert.ok(fs.existsSync(path.join(root, 'docs', 'showcase.html')));
   const captureSource = fs.readFileSync(path.join(root, 'tools', 'capture-docs.js'), 'utf8');
+  const mainSource = fs.readFileSync(path.join(root, 'src', 'main.js'), 'utf8');
   assert.match(captureSource, /language: 'en'/);
   assert.match(captureSource, /MARGE_CONFIG_DIR: profile/);
   assert.match(captureSource, /--user-data-dir=/);
+  assert.match(mainSource, /!CAPTURE && !app\.requestSingleInstanceLock\(\)/);
+  assert.match(mainSource, /app\.setPath\('userData', captureUserData\)/);
+  assert.match(mainSource, /capture failed:[\s\S]+app\.exit\(1\)/);
   assert.deepStrictEqual(pngSize(path.join(root, 'docs', 'hero.png')),
     { width: 1800, height: 1100 });
   assert.deepStrictEqual(pngSize(path.join(root, 'docs', 'settings-showcase.png')),

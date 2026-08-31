@@ -63,16 +63,16 @@ jobs:
       - run: npm run electron:ensure
       - name: Capture the real widget on macOS
         if: runner.os == 'macOS'
-        run: MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/widget.png" npm run demo
+        run: MARGE_CONFIG_DIR="$RUNNER_TEMP/widget-profile" MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/widget.png" npm run demo
       - name: Capture the real settings window on macOS
         if: runner.os == 'macOS'
-        run: MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/settings.png" MARGE_CAPTURE_SETTINGS=1 npm run demo
+        run: MARGE_CONFIG_DIR="$RUNNER_TEMP/settings-profile" MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/settings.png" MARGE_CAPTURE_SETTINGS=1 npm run demo
       - name: Capture the real widget on Linux X11
         if: runner.os == 'Linux'
-        run: xvfb-run -a env MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/widget.png" npm run demo -- --no-sandbox
+        run: xvfb-run -a env MARGE_CONFIG_DIR="$RUNNER_TEMP/widget-profile" MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/widget.png" npm run demo -- --no-sandbox
       - name: Capture the real settings window on Linux X11
         if: runner.os == 'Linux'
-        run: xvfb-run -a env MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/settings.png" MARGE_CAPTURE_SETTINGS=1 npm run demo -- --no-sandbox
+        run: xvfb-run -a env MARGE_CONFIG_DIR="$RUNNER_TEMP/settings-profile" MARGE_DEMO=1 MARGE_CAPTURE="$RUNNER_TEMP/settings.png" MARGE_CAPTURE_SETTINGS=1 npm run demo -- --no-sandbox
       - run: test -s "$RUNNER_TEMP/widget.png" && test -s "$RUNNER_TEMP/settings.png"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
