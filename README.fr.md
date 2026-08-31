@@ -53,15 +53,15 @@ Les réglages sont conservés par défaut. Ajoute `--purge` pour supprimer confi
 
 ## Lire le widget
 
-- **Anneau intérieur :** fenêtre courte, normalement cinq heures.
-- **Anneau extérieur :** fenêtre hebdomadaire.
+- **Anneau extérieur :** fenêtre courte, normalement cinq heures ; une limite longue épuisée qui concerne le même modèle vide cet anneau.
+- **Anneau intérieur :** fenêtre hebdomadaire.
 - **Chiffre :** pourcentage restant de la limite la plus contraignante réellement communiquée.
 - **Anneau pointillé :** fenêtre non communiquée ; une donnée absente n’est jamais inventée comme un zéro.
 - **Survol :** résumé du fournisseur et toutes ses sous-limites.
 - **Clic :** dates et heures exactes de réinitialisation ; reclique pour réduire.
 - **Couleur :** marge disponible, d’une situation confortable à une limite proche.
 
-Les trois fournisseurs gardent une position stable même si l’un d’eux ne répond plus temporairement. Claude peut exposer des limites hebdomadaires par modèle. Antigravity peut séparer Gemini de Claude/GPT. Le chiffre principal prend toujours la vraie limite la plus stricte et le panneau indique sa source.
+Les trois fournisseurs gardent une position stable même si l’un d’eux ne répond plus temporairement. Claude peut exposer des limites hebdomadaires par modèle. Codex et Antigravity peuvent exposer plusieurs familles de modèles. Une limite hebdomadaire globale épuisée bloque toutes les fenêtres courtes, tandis qu’une limite propre à un modèle ne concerne que ce modèle. Le chiffre principal prend toujours la vraie limite la plus stricte et le panneau indique sa source.
 
 ## Sources des quotas
 

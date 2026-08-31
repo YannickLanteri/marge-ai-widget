@@ -30,6 +30,7 @@ test('documentation captures are reproducible from a neutral local template', ()
   assert.ok(fs.existsSync(path.join(root, 'docs', 'showcase.html')));
   const captureSource = fs.readFileSync(path.join(root, 'tools', 'capture-docs.js'), 'utf8');
   const mainSource = fs.readFileSync(path.join(root, 'src', 'main.js'), 'utf8');
+  const rendererSource = fs.readFileSync(path.join(root, 'src', 'renderer', 'app.js'), 'utf8');
   assert.match(captureSource, /language: 'en'/);
   assert.match(captureSource, /MARGE_CONFIG_DIR: profile/);
   assert.match(captureSource, /--user-data-dir=/);
@@ -39,6 +40,10 @@ test('documentation captures are reproducible from a neutral local template', ()
   assert.match(mainSource, /verification\.items === 3/);
   assert.match(mainSource, /verification\.themes > 0/);
   assert.match(mainSource, /capture failed:[\s\S]+app\.exit\(1\)/);
+  assert.match(rendererSource,
+    /circleMarkup\('outer',[\s\S]+!service\.windows\.session/);
+  assert.match(rendererSource,
+    /circleMarkup\('inner',[\s\S]+!service\.windows\.weekly/);
   assert.deepStrictEqual(pngSize(path.join(root, 'docs', 'hero.png')),
     { width: 1800, height: 1100 });
   assert.deepStrictEqual(pngSize(path.join(root, 'docs', 'settings-showcase.png')),

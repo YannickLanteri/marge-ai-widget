@@ -53,15 +53,15 @@ Settings are preserved by default. Add `--purge` to remove the widget configurat
 
 ## Read the widget
 
-- **Inner ring:** short window, normally five hours.
-- **Outer ring:** weekly window.
+- **Outer ring:** short window, normally five hours; a longer exhausted limit that applies to the same model makes this ring empty.
+- **Inner ring:** weekly window.
 - **Number:** remaining percentage of the provider’s strictest reported limit.
 - **Dotted ring:** the provider did not report this window; missing data is never invented as zero.
 - **Hover:** selected provider summary and every reported sub-limit.
 - **Click:** exact reset dates and times; click again to collapse.
 - **Colour:** available headroom, from comfortable to close to the limit.
 
-The three providers keep stable positions even when one temporarily stops reporting. Claude may expose model-specific weekly limits. Antigravity may separate Gemini from Claude/GPT. The headline always takes the strictest real value and the panel names its source.
+The three providers keep stable positions even when one temporarily stops reporting. Claude may expose model-specific weekly limits. Codex and Antigravity may expose different model families. A depleted global weekly limit blocks every short window, while a model-specific weekly limit only affects the same model. The headline always takes the strictest real value and the panel names its source.
 
 ## Provider sources
 

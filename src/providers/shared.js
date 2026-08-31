@@ -40,10 +40,39 @@ function chooseWindow(details, kind) {
     item.remainingPercent < strictest.remainingPercent ? item : strictest);
 }
 
+function sameQuotaScope(shortWindow, longWindow) {
+  if (longWindow.scope === 'all') return true;
+  if (shortWindow.scope === 'all' || shortWindow.scope !== longWindow.scope) return false;
+  const shortLabel = String(shortWindow.label || '').trim().toLowerCase();
+  const longLabel = String(longWindow.label || '').trim().toLowerCase();
+  return Boolean(shortLabel && shortLabel === longLabel);
+}
+
+function chooseEffectiveSession(details) {
+  const sessions = details.filter((item) => item.kind === 'session').map((item) => {
+    const blockedBy = details.find((candidate) => candidate.kind === 'weekly' &&
+      candidate.remainingPercent === 0 && sameQuotaScope(item, candidate));
+    return {
+      ...item,
+      effectiveRemainingPercent: blockedBy ? 0 : item.remainingPercent,
+      blockedBy: blockedBy ? {
+        kind: blockedBy.kind,
+        label: blockedBy.label,
+        resetsAt: blockedBy.resetsAt
+      } : null
+    };
+  });
+  if (!sessions.length) return null;
+  const usable = sessions.filter((item) => item.effectiveRemainingPercent > 0);
+  const candidates = usable.length ? usable : sessions;
+  return candidates.reduce((strictest, item) => item.remainingPercent <
+    strictest.remainingPercent ? item : strictest);
+}
+
 function finishService(input) {
   const details = (input.details || []).filter(Boolean);
   const windows = {
-    session: chooseWindow(details, 'session'),
+    session: chooseEffectiveSession(details),
     weekly: chooseWindow(details, 'weekly')
   };
   const summaryRemaining = details.length
@@ -97,5 +126,6 @@ function flattenGauges(services) {
 }
 
 module.exports = {
-  clamp, normalizeReset, detail, chooseWindow, finishService, failedService, flattenGauges
+  clamp, normalizeReset, detail, chooseWindow, chooseEffectiveSession, finishService,
+  failedService, flattenGauges
 };

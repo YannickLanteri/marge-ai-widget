@@ -102,7 +102,7 @@ function windowLabel(item, fallbackKind) {
 
 function detailLabel(item) {
   const windowName = windowLabel(item, item.kind);
-  return item.label ? `${item.label} · ${windowName}` : windowName;
+  return `${item.label || T.allModels} · ${windowName}`;
 }
 
 function countTo(element, from, to, duration) {
@@ -146,6 +146,12 @@ function circleMarkup(className, radius, circumference, missing) {
     stroke-dasharray="${circumference.toFixed(2)}" stroke-dashoffset="${circumference.toFixed(2)}"/>`;
 }
 
+function ringRemaining(item) {
+  return Number.isFinite(item && item.effectiveRemainingPercent)
+    ? item.effectiveRemainingPercent
+    : item && item.remainingPercent;
+}
+
 function buildItem(service, index) {
   const outerRadius = (geo.ring - 5) / 2;
   const innerRadius = outerRadius - 7;
@@ -157,15 +163,15 @@ function buildItem(service, index) {
   element.dataset.service = service.id;
   element.style.setProperty('--enter-delay', `${90 + index * 76}ms`);
   element.style.setProperty('--brand', BRAND[service.id] || 'var(--ink)');
-  element.style.setProperty('--outer-tone', service.windows.weekly
+  element.style.setProperty('--outer-tone', service.windows.session
+    ? tone(ringRemaining(service.windows.session)) : 'var(--track)');
+  element.style.setProperty('--inner-tone', service.windows.weekly
     ? tone(service.windows.weekly.remainingPercent) : 'var(--track)');
-  element.style.setProperty('--inner-tone', service.windows.session
-    ? tone(service.windows.session.remainingPercent) : 'var(--track)');
   element.setAttribute('aria-label', service.name);
   element.innerHTML = `<span class="ring">
       <svg viewBox="0 0 ${geo.ring} ${geo.ring}">
-        ${circleMarkup('outer', outerRadius, outerCircumference, !service.windows.weekly)}
-        ${circleMarkup('inner', innerRadius, innerCircumference, !service.windows.session)}
+        ${circleMarkup('outer', outerRadius, outerCircumference, !service.windows.session)}
+        ${circleMarkup('inner', innerRadius, innerCircumference, !service.windows.weekly)}
       </svg>
       <span class="ring-face"><span class="glyph">${ICONS[service.icon] || ''}</span></span>
     </span>
@@ -212,10 +218,12 @@ function makeWindowCard(kind, item) {
   reset.className = 'window-reset';
   reset.textContent = item ? formatReset(item.resetsAt, expanded) : T.notReported;
   card.append(label, value, remaining, reset);
-  if (item && item.label) {
+  if (item) {
     const source = document.createElement('span');
     source.className = 'window-source';
-    source.textContent = item.label;
+    source.textContent = item.blockedBy
+      ? `${item.label || T.allModels} · ${windowLabel(item.blockedBy, 'weekly')} 0%`
+      : item.label || T.allModels;
     card.appendChild(source);
   }
   return card;
@@ -346,7 +354,7 @@ function render() {
 }
 
 function arcTarget(circumference, window) {
-  return window ? circumference * (1 - window.remainingPercent / 100) : circumference;
+  return window ? circumference * (1 - ringRemaining(window) / 100) : circumference;
 }
 
 function animateIn() {
@@ -354,9 +362,9 @@ function animateIn() {
     item.outerArc.style.transitionDelay = `${170 + index * 84}ms`;
     item.innerArc.style.transitionDelay = `${230 + index * 84}ms`;
     item.outerArc.style.strokeDashoffset = arcTarget(
-      item.outerCircumference, item.service.windows.weekly).toFixed(2);
+      item.outerCircumference, item.service.windows.session).toFixed(2);
     item.innerArc.style.strokeDashoffset = arcTarget(
-      item.innerCircumference, item.service.windows.session).toFixed(2);
+      item.innerCircumference, item.service.windows.weekly).toFixed(2);
     if (Number.isFinite(item.service.summaryRemaining)) {
       setTimeout(() => countTo(item.pct, 0, item.service.summaryRemaining, 760), 180 + index * 84);
     }
