@@ -38,10 +38,10 @@ marge            # démarrer ou redémarrer
 marge status     # état du processus et dernière lecture agrégée
 marge logs       # suivre les journaux bornés
 marge stop       # arrêter jusqu’au prochain lancement ou login
-marge update     # mettre à jour une installation Git
+marge update     # mettre à jour atomiquement un snapshot ou une copie Git
 ```
 
-Pour actualiser un snapshot local, récupère les changements Git puis relance `bash install.sh --local`.
+Pour tester des changements locaux non fusionnés, relance `bash install.sh --local` depuis cette copie de travail.
 
 Désinstallation sans toucher aux sessions fournisseurs :
 

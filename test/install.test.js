@@ -2,12 +2,14 @@
 
 const assert = require('assert');
 const fs = require('fs');
+const os = require('os');
 const path = require('path');
 const { spawnSync } = require('child_process');
 
 const root = path.join(__dirname, '..');
 const install = path.join(root, 'install.sh');
 const uninstall = path.join(root, 'uninstall.sh');
+const launcher = path.join(root, 'bin', 'marge');
 let passed = 0;
 const test = (name, fn) => { fn(); passed++; process.stdout.write(`  ok  ${name}\n`); };
 
@@ -48,6 +50,29 @@ test('local snapshots exclude common credentials and private configuration', () 
     '*.key', '*.pem', '*.p12', '*.mobileprovision']) {
     assert.ok(source.includes(`--exclude='${pattern}'`), `missing exclusion for ${pattern}`);
   }
+});
+
+test('snapshot installations update by reinstalling their canonical repository', () => {
+  const snapshot = fs.mkdtempSync(path.join(os.tmpdir(), 'marge-snapshot-'));
+  const output = path.join(snapshot, 'update.txt');
+  fs.mkdirSync(path.join(snapshot, 'bin'));
+  fs.copyFileSync(launcher, path.join(snapshot, 'bin', 'marge'));
+  fs.chmodSync(path.join(snapshot, 'bin', 'marge'), 0o755);
+  fs.writeFileSync(path.join(snapshot, 'package.json'), JSON.stringify({
+    repository: { url: 'git+https://github.com/example/widget.git' }
+  }));
+  fs.writeFileSync(path.join(snapshot, 'install.sh'),
+    '#!/bin/sh\nprintf "%s\\n%s\\n%s\\n" "$MARGE_DIR" "$1" "$2" > "$MARGE_TEST_OUTPUT"\n');
+  fs.chmodSync(path.join(snapshot, 'install.sh'), 0o755);
+  const result = run(path.join(snapshot, 'bin', 'marge'), ['update'], {
+    MARGE_TEST_OUTPUT: output
+  });
+  assert.strictEqual(result.status, 0, result.stderr);
+  const [installedDir, mode, repo] = fs.readFileSync(output, 'utf8').trim().split('\n');
+  assert.strictEqual(fs.realpathSync(installedDir), fs.realpathSync(snapshot));
+  assert.strictEqual(mode, '--repo');
+  assert.strictEqual(repo, 'https://github.com/example/widget.git');
+  fs.rmSync(snapshot, { recursive: true, force: true });
 });
 
 test('uninstaller is purge-explicit and refuses the filesystem root', () => {
