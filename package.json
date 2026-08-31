@@ -7,6 +7,7 @@
   "scripts": {
     "start": "electron .",
     "demo": "electron . --demo",
+    "docs:capture": "electron tools/capture-docs.js",
     "usage": "node src/usage.js",
     "electron:ensure": "node tools/ensure-electron.js",
     "test": "node test/run.js",
