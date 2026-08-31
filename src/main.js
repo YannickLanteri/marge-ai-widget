@@ -34,6 +34,16 @@ const {
 // Claude, Codex and Antigravity always keep the same physical position.
 let rows = 3;
 const DEMO = process.env.MARGE_DEMO === '1' || process.argv.includes('--demo');
+const CAPTURE = Boolean(process.env.MARGE_CAPTURE);
+
+// CI and documentation may start two short-lived Electron instances in quick
+// succession. Give each explicit capture profile its own Chromium data path so
+// a stale singleton socket or cache lock cannot turn a capture into a no-op.
+if (CAPTURE && process.env.MARGE_CONFIG_DIR) {
+  const captureUserData = path.join(process.env.MARGE_CONFIG_DIR, 'electron');
+  fs.mkdirSync(captureUserData, { recursive: true, mode: 0o700 });
+  app.setPath('userData', captureUserData);
+}
 
 paths.migrateLegacy();
 const CONFIG_PATH = paths.configFile();
@@ -672,7 +682,7 @@ function applyConfig(next) {
 
 // --- Lifecycle --------------------------------------------------------------
 
-if (!app.requestSingleInstanceLock()) app.quit();
+if (!CAPTURE && !app.requestSingleInstanceLock()) app.quit();
 
 // Why did it stop? A widget that exits silently and is restarted by the system
 // loses its backoff each time, which is how a rate limit becomes permanent.
@@ -786,7 +796,9 @@ ipcMain.handle('settings:reset', () => {
 
 // Control capture: render the window off screen and quit. Used to check the
 // real rendering on a machine with no compositor, or in CI.
-if (process.env.MARGE_CAPTURE) {
+if (CAPTURE) {
+  // A capture that exits before writing its PNG must fail the shell step.
+  process.exitCode = 1;
   app.whenReady().then(() => {
     setTimeout(async () => {
       try {
@@ -818,7 +830,9 @@ if (process.env.MARGE_CAPTURE) {
         process.stdout.write(`capture written: ${process.env.MARGE_CAPTURE} ` +
           `${image.getSize().width}x${image.getSize().height}\n`);
       } catch (err) {
-        console.error('capture failed:', err.message);
+        process.stderr.write(`capture failed: ${err.message}\n`);
+        app.exit(1);
+        return;
       }
       app.exit(0);
     }, 4000);
