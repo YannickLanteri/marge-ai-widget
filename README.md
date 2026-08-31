@@ -31,7 +31,7 @@ bash install.sh --local
 
 The installer creates an atomic snapshot in `~/.marge-ai-widget`, installs only the locked Electron runtime, runs the complete test suite, registers autostart and launches the widget. If anything fails, the previous installation stays untouched.
 
-Move the pointer to the middle of the outer right edge. The menu bar icon exposes refresh, settings, updates and quit controls.
+The first launch confirms that Marge AI is running and explains the right-edge gesture; clicking the notification reveals the widget. It is shown only once. The menu bar icon remains the permanent status indicator and exposes refresh, settings, updates and quit controls.
 
 ```sh
 marge            # start or restart

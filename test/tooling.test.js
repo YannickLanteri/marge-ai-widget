@@ -40,6 +40,9 @@ test('documentation captures are reproducible from a neutral local template', ()
   assert.match(mainSource, /verification\.items === 3/);
   assert.match(mainSource, /verification\.themes > 0/);
   assert.match(mainSource, /capture failed:[\s\S]+app\.exit\(1\)/);
+  assert.match(mainSource, /onboardingShown === true/);
+  assert.match(mainSource, /notification\.on\('click', reveal\)/);
+  assert.match(mainSource, /notification\.on\('action', reveal\)/);
   assert.match(rendererSource,
     /circleMarkup\('outer',[\s\S]+!service\.windows\.session/);
   assert.match(rendererSource,

@@ -79,6 +79,8 @@ let win = null;
 let tray = null;
 let visible = false;
 let hideTimer = null;
+let revealTimer = null;
+let revealUntil = 0;
 let pollTimer = null;
 let refreshTimer = null;
 let lastManualRefreshAt = 0;
@@ -282,6 +284,17 @@ function show() {
   )) refresh();
 }
 
+function peek(duration = 3000) {
+  revealUntil = Date.now() + duration;
+  clearTimeout(revealTimer);
+  show();
+  cancelHide();
+  revealTimer = setTimeout(() => {
+    revealUntil = 0;
+    scheduleHide();
+  }, duration);
+}
+
 function scheduleHide() {
   if (!visible || hideTimer) return;
   hideTimer = setTimeout(() => {
@@ -368,6 +381,11 @@ function poll() {
   }
 
   const b = win.getBounds();
+  if (Date.now() < revealUntil) {
+    cancelHide();
+    sendCursor(cursor);
+    return;
+  }
   if (DEMO || insideKeepAlive(cursor, b, rows, activeDisplay().workArea)) cancelHide();
   else scheduleHide();
   sendCursor(cursor);
@@ -521,7 +539,7 @@ function buildMenu() {
   const atLogin = autostart.isEnabled();
   tray.setContextMenu(Menu.buildFromTemplate([
     { label: MENU.refresh, click: () => manualRefresh() },
-    { label: MENU.peek, click: () => { show(); setTimeout(scheduleHide, 3000); } },
+    { label: MENU.peek, click: () => peek() },
     { type: 'separator' },
     {
       label: MENU.startAtLogin,
@@ -561,6 +579,32 @@ function createTray() {
   }
   buildMenu();
   updateTrayTitle();
+}
+
+let onboardingNotification = null;
+
+function showFirstLaunchGuide() {
+  if (DEMO || store.read().onboardingShown === true) return;
+  store.save({ onboardingShown: true });
+  if (!Notification.isSupported()) return;
+
+  const options = {
+    title: T.onboardingTitle,
+    body: T.onboardingBody,
+    silent: true
+  };
+  if (process.platform === 'darwin' || process.platform === 'win32') {
+    options.actions = [{ type: 'button', text: T.onboardingAction }];
+  }
+  const notification = new Notification(options);
+  const reveal = () => peek(5000);
+  notification.on('click', reveal);
+  notification.on('action', reveal);
+  notification.on('close', () => {
+    if (onboardingNotification === notification) onboardingNotification = null;
+  });
+  onboardingNotification = notification;
+  notification.show();
 }
 
 /** Pinned mode: the widget stays open until you unpin it. */
@@ -708,6 +752,7 @@ app.whenReady().then(() => {
   if (process.platform === 'darwin' && app.dock) app.dock.hide();
   createWindow();
   createTray();
+  if (!DEMO) setTimeout(showFirstLaunchGuide, 1200);
 
   const owed = DEMO ? 0 : initialDelay(store.read().nextAllowedAt);
   if (owed > 0) {
@@ -869,6 +914,7 @@ app.on('window-all-closed', () => {});
 app.on('before-quit', () => {
   clearInterval(pollTimer);
   clearTimeout(refreshTimer);
+  clearTimeout(revealTimer);
   clearTimeout(updateTimer);
   globalShortcut.unregisterAll();
 });

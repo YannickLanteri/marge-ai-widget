@@ -67,5 +67,13 @@ test('saving merges rather than replacing', () => {
   assert.ok(s.alerts.session);
 });
 
+test('the first-launch guide is remembered without replacing runtime state', () => {
+  store.write({ failures: 2 });
+  store.save({ onboardingShown: true });
+  const s = store.read();
+  assert.strictEqual(s.failures, 2);
+  assert.strictEqual(s.onboardingShown, true);
+});
+
 fs.rmSync(TMP, { recursive: true, force: true });
 process.stdout.write(`\n${passed} state tests passed\n`);
