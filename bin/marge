@@ -82,6 +82,15 @@ status() {
   [ -f "$LOG" ] && { echo "last read:"; grep -v '^$' "$LOG" | tail -1; }
 }
 
+repository_url() {
+  node -e '
+    const value = require(process.argv[1]).repository;
+    const url = typeof value === "string" ? value : value && value.url;
+    if (!url) process.exit(1);
+    process.stdout.write(url.replace(/^git\+/, ""));
+  ' "$APP_DIR/package.json"
+}
+
 case "${1:-start}" in
   start|restart|"") start ;;
   stop) stop ;;
@@ -93,12 +102,16 @@ case "${1:-start}" in
     echo "Open the tray icon and choose Settings."
     ;;
   update)
-    [ -d "$APP_DIR/.git" ] || {
-      echo "marge: $APP_DIR n'est pas une copie git, mise a jour impossible" >&2
-      exit 1
-    }
-    node "$APP_DIR/tools/update.js"
-    start
+    if [ -d "$APP_DIR/.git" ]; then
+      node "$APP_DIR/tools/update.js"
+      start
+    else
+      REPO="$(repository_url)" || {
+        echo "marge: no update repository is configured" >&2
+        exit 1
+      }
+      MARGE_DIR="$APP_DIR" bash "$APP_DIR/install.sh" --repo "$REPO"
+    fi
     ;;
   *)
     sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'

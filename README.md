@@ -38,10 +38,10 @@ marge            # start or restart
 marge status     # process state and last aggregate reading
 marge logs       # follow bounded logs
 marge stop       # stop until the next start or login
-marge update     # update a Git-based installation
+marge update     # atomically update either an installed snapshot or Git checkout
 ```
 
-Update a local snapshot by pulling the repository and running `bash install.sh --local` again.
+To test unmerged changes from a local checkout, run `bash install.sh --local` again from that checkout.
 
 Uninstall without touching provider sessions:
 
