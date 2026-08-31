@@ -1,27 +1,27 @@
-# Marge AI Widget
+<p align="center">
+  <img src="build/icon.png" width="96" height="96" alt="Marge AI Widget icon">
+</p>
 
-Claude, Codex and Antigravity quotas at the right edge of the screen.
+<h1 align="center">Marge AI Widget</h1>
 
-Move the pointer to the edge and the widget slides in without taking focus. Move away and it disappears. The three services keep stable positions even when one of them temporarily stops reporting a limit.
+<p align="center">Claude, Codex and Antigravity quotas at the right edge of your screen.</p>
 
-[Français](README.fr.md)
+<p align="center">
+  <a href="https://github.com/YannickLanteri/marge-ai-widget/actions/workflows/test.yml"><img src="https://github.com/YannickLanteri/marge-ai-widget/actions/workflows/test.yml/badge.svg" alt="Tests"></a>
+  · <a href="LICENSE">MIT License</a>
+  · Electron 44.0.0
+  · <a href="README.fr.md">Français</a>
+</p>
 
-![Marge AI Widget showing Claude, Codex and Antigravity quotas](docs/widget.png)
+![Marge AI Widget on a fictional neutral desktop](docs/hero.png)
 
-## At a glance
+Move the pointer to the outer right edge and the widget slides in without taking focus. Move away and it disappears. Hover for the selected provider breakdown; click for exact reset dates.
 
-- Inner ring: short window, normally five hours.
-- Outer ring: weekly window.
-- Number on the right: remaining percentage of the service’s strictest limit.
-- Dotted ring: the service did not report that window; it is never faked as zero.
-- Hover: selected provider breakdown.
-- Click: exact reset dates and times; click again to collapse.
+The desktop above is entirely fictional. Every quota comes from the built-in demo mode: no real account, application, file or notification appears in the repository images.
 
-Claude may expose model-specific weekly limits. Antigravity separates Gemini from Claude/GPT. The headline always uses the actual strictest value and the panel names its source.
+## Install
 
-## Install from a checkout
-
-Requirements: macOS 13+ or Linux X11, and Node.js 22.12 or newer.
+Requirements: macOS 13+ or Linux X11, Node.js 22.12 or newer, and the provider applications you want to monitor.
 
 ```sh
 git clone https://github.com/YannickLanteri/marge-ai-widget.git marge-ai-widget
@@ -29,16 +29,19 @@ cd marge-ai-widget
 bash install.sh --local
 ```
 
-The installer builds an atomic local snapshot in `~/.marge-ai-widget`, installs only the locked Electron runtime, runs the full test suite, registers autostart and then launches the widget. A failed installation leaves the previous version untouched.
+The installer creates an atomic snapshot in `~/.marge-ai-widget`, installs only the locked Electron runtime, runs the complete test suite, registers autostart and launches the widget. If anything fails, the previous installation stays untouched.
+
+Move the pointer to the middle of the outer right edge. The menu bar icon exposes refresh, settings, updates and quit controls.
 
 ```sh
-marge
-marge status
-marge logs
-marge stop
+marge            # start or restart
+marge status     # process state and last aggregate reading
+marge logs       # follow bounded logs
+marge stop       # stop until the next start or login
+marge update     # update a Git-based installation
 ```
 
-A local snapshot is updated by running `bash install.sh --local` again. Git-based remote installs also expose `marge update`.
+Update a local snapshot by pulling the repository and running `bash install.sh --local` again.
 
 Uninstall without touching provider sessions:
 
@@ -46,9 +49,21 @@ Uninstall without touching provider sessions:
 bash ~/.marge-ai-widget/uninstall.sh
 ```
 
-Settings are kept by default. Add `--purge` to remove widget settings and caches as well. Provider sessions are never removed.
+Settings are preserved by default. Add `--purge` to remove the widget configuration, state and logs. Claude, Codex and Antigravity sessions are never removed.
 
-## Where the numbers come from
+## Read the widget
+
+- **Inner ring:** short window, normally five hours.
+- **Outer ring:** weekly window.
+- **Number:** remaining percentage of the provider’s strictest reported limit.
+- **Dotted ring:** the provider did not report this window; missing data is never invented as zero.
+- **Hover:** selected provider summary and every reported sub-limit.
+- **Click:** exact reset dates and times; click again to collapse.
+- **Colour:** available headroom, from comfortable to close to the limit.
+
+The three providers keep stable positions even when one temporarily stops reporting. Claude may expose model-specific weekly limits. Antigravity may separate Gemini from Claude/GPT. The headline always takes the strictest real value and the panel names its source.
+
+## Provider sources
 
 ### Claude
 
@@ -58,71 +73,113 @@ The widget reads the Claude Code session from the macOS Keychain or `~/.claude/.
 GET https://api.anthropic.com/api/oauth/usage
 ```
 
-It never refreshes or stores the token. On macOS, an authentication error exposes a
-**Connect Claude** button that opens Terminal with the fixed command `claude auth login`.
-Claude Code remains responsible for saving and renewing its own session.
+It never refreshes or persists the token. On macOS, an authentication failure exposes a **Connect Claude** button that opens Terminal with the fixed command `claude auth login`. Claude Code remains responsible for authentication and renewal.
 
 ### Codex
 
-The widget starts the official local Codex App Server when refreshing and reads:
+The widget starts the official local Codex App Server while refreshing and reads:
 
 ```text
 account/rateLimits/read
 ```
 
-Codex owns authentication and token renewal. The widget never reads `auth.json`. API-key-only accounts do not expose ChatGPT subscription quotas.
-
-If the official response omits a five-hour or weekly window, its ring stays dotted rather than showing invented data.
+Codex owns authentication and token renewal. The widget never reads `auth.json`. API-key-only accounts do not expose ChatGPT subscription quotas. If Codex omits a window, the corresponding ring stays dotted.
 
 ### Antigravity
 
-The widget discovers the local Antigravity process and asks its service on `127.0.0.1`. Its local CSRF token stays in memory and is never written or logged. Antigravity must be running for its quota to be available.
+The widget discovers the local Antigravity process and requests its service on `127.0.0.1`. Its local CSRF token stays in memory and is never written or logged. Antigravity must be running for its quota to be available.
+
+## Refresh, stale values and resource use
+
+The normal refresh interval is five minutes. **Refresh now** in the menu bar asks immediately. The scheduler pauses around sleep and lock states, slows down while the machine is idle, obeys server throttling and backs off after failures.
+
+A failed request never replaces a real value with zero. The last successful reading may remain visible for up to 24 hours, clearly marked stale. Only successful normalized readings enter the cache; raw provider error bodies are not persisted. State is written atomically with user-only permissions.
+
+Configuration lives at `~/.config/marge-ai-widget/config.json`. Existing settings from `~/.config/claude-marge` are copied once for backwards compatibility.
+
+## Settings
+
+![Marge AI Widget settings on a fictional neutral desktop](docs/settings-showcase.png)
+
+Everything applies immediately:
+
+- fourteen neutral, light and period-specific themes;
+- automatic, 24-hour or AM/PM time;
+- vertical placement and multi-display behaviour;
+- refresh interval from 30 seconds to one hour;
+- configurable quota alerts;
+- start at login and language selection;
+- a global keep-visible shortcut;
+- daily update checks, always manual to install.
+
+The included themes are `midnight`, `graphite`, `nordic`, `ember`, `matcha`, `lilac`, `daylight`, `sand`, `glass`, `win95`, `winxp`, `aqua`, `win11` and `ubuntu`.
+
+## Menu bar
+
+- **Refresh now:** read all three providers immediately.
+- **Show briefly:** reveal the widget without reaching for the edge.
+- **Start at login:** toggle the supervised login service.
+- **Keep visible:** pin the pill; the details panel still follows the pointer.
+- **Settings:** open the full settings window.
+- **Check for updates:** compare the installation with `main`.
+- **Reveal configuration:** open the local JSON configuration.
+- **Restart / Quit:** restart through the supervisor or deliberately stop.
+
+The default global shortcut is `Cmd/Ctrl+Shift+M`.
 
 ## Privacy
 
-- No analytics or telemetry.
+- No analytics, telemetry or advertising.
 - No copied or stored credentials.
+- No hard-coded account, email or organization identifiers.
 - Claude traffic goes only to `api.anthropic.com`.
-- Codex traffic is owned by its official App Server.
+- Codex traffic is owned by its official local App Server.
 - Antigravity traffic stays on localhost.
-- Logs contain percentages and states, never secrets.
+- Logs contain percentages and state transitions, never credentials or raw responses.
+- Demo values and documentation captures are never persisted as user state.
 
-## Refreshing and stale data
+## Security model
 
-The default refresh interval is five minutes. It slows down while the machine is idle and respects server throttling. After an error, the last real value may remain visible for up to 24 hours and is clearly marked stale. Demo values are never persisted.
+Provider credentials stay in the main process and never enter the renderer. Context isolation, renderer sandboxing, restrictive CSPs, blocked navigation and denied browser permissions reduce the UI attack surface. Packaged builds enforce ASAR integrity and disable RunAsNode, Node environment injection and CLI inspection.
 
-Configuration lives at `~/.config/marge-ai-widget/config.json`. Existing `~/.config/claude-marge` settings are copied once for backwards compatibility. Fourteen themes, multiple displays, configurable alerts and a global pin shortcut are included.
+Installations use locked dependencies. Local snapshots exclude common environment files, private keys, provider configuration and authentication files. GitHub Actions are pinned to immutable commit SHAs and Dependabot monitors npm and workflow dependencies.
 
-![Marge AI Widget settings](docs/settings.png)
+Read [SECURITY.md](SECURITY.md) before reporting a vulnerability. Please use GitHub private vulnerability reporting instead of a public issue when it is enabled.
 
-## Development
+## Compatibility
+
+| System | Status | Notes |
+| --- | --- | --- |
+| macOS 13+, Apple Silicon | Supported and tested | LaunchAgent, menu bar application, Electron 44 |
+| macOS 13+, Intel | Supported | Same code path; public binaries must include the architecture |
+| Linux X11 | Supported and CI-tested | systemd user service; a compositor improves transparency |
+| Linux Wayland | Partial | Global edge placement is not guaranteed by Electron |
+| Windows | Not supported | Placement and autostart are not implemented |
+
+Claude Pro/Max, ChatGPT subscription accounts exposed by Codex, and local Antigravity installations are normalized from the limits each application actually reports. No plan-specific quota is fabricated.
+
+## Development and verification
 
 ```sh
 npm ci
 npm run electron:ensure
-npm test
 npm run check
 npm run demo
-MARGE_DEMO=1 MARGE_CAPTURE=/tmp/marge-ai.png npm run demo
 npm run usage
+npm run docs:capture
 npm run dist:mac
 ```
 
-Tests cover configuration boundaries, the installer, bounded logs, multi-display geometry, all three providers, missing windows, persistence, backoff, alerts, languages, themes and updates. CI also captures the real Electron widget and settings window.
+`npm run check` runs 135 unit and integration checks across 17 files. Coverage includes provider normalization, missing windows, cache privacy, backoff, rate limits, atomic state, bounded logs, installer rollback, autostart, updates, alerts, localization, themes and multi-display geometry.
 
-Local packages are unsigned. Public macOS binaries must be signed and notarized before distribution.
+GitHub Actions runs Node 22.12 and Node 24 on macOS and Ubuntu, ShellCheck, two dependency audits and real Electron capture smoke tests on macOS and Linux X11.
 
-## Security
+Documentation scenes are reproducible with `npm run docs:capture`. They combine the real demo-mode Electron captures with a local HTML/CSS desktop template; no generated approximation of the application UI is used.
 
-Renderer sandboxing, context isolation, restrictive CSPs, denied navigation and denied browser permissions keep provider sessions outside the UI. Packaged builds also enforce ASAR integrity and disable RunAsNode, Node environment injection and CLI inspection. State files are written atomically with user-only permissions. See [SECURITY.md](SECURITY.md) to report a vulnerability privately.
+Local packages are unsigned. A public macOS binary must be signed and notarized before distribution. See [CONTRIBUTING.md](CONTRIBUTING.md) for the contribution workflow.
 
-## Compatibility
+## License and attribution
 
-- macOS 13+, Intel and Apple Silicon: supported.
-- Linux X11: supported.
-- Linux Wayland: partial; global Electron positioning is not guaranteed.
-- Windows: widget placement is not implemented.
+[MIT](LICENSE). This is an unofficial project and is not affiliated with, endorsed by or supported by Anthropic, OpenAI or Google.
 
-## License
-
-[MIT](LICENSE). Unofficial project, not affiliated with Anthropic, OpenAI or Google. Original Claude Marge work remains attributed through the Git history and license; AG Usage-derived work is credited in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES).
+The original Claude Marge work remains attributed through the Git history and license. AG Usage-derived work is credited in [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES).

@@ -806,6 +806,11 @@ if (process.env.MARGE_CAPTURE) {
           await target.webContents.executeJavaScript(
             `document.querySelector('${selector}')?.click()`
           );
+          if (captureService && process.env.MARGE_CAPTURE_COLLAPSED) {
+            await target.webContents.executeJavaScript(
+              `document.querySelector('${selector}')?.click()`
+            );
+          }
           await new Promise((r) => setTimeout(r, 350));
         }
         const image = await target.webContents.capturePage();
