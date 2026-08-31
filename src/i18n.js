@@ -164,6 +164,9 @@
       notifyBody: (name, percent) => `${name} is at ${percent}% of its limit.`,
       updateTitle: 'Marge AI update',
       updateBody: (short) => `Version ${short} is ready. Open Settings to install it.`,
+      onboardingTitle: 'Marge AI is running',
+      onboardingBody: 'Move the pointer to the right edge of the screen to reveal your quotas.',
+      onboardingAction: 'Show widget',
       errors: {
         loading: 'Reading your usage.',
         'no-credentials': 'No Claude session on this machine. Run <b>claude</b> once and sign in.',
@@ -278,6 +281,9 @@
       notifyBody: (name, percent) => `${name} est à ${percent} % de sa limite.`,
       updateTitle: 'Mise à jour Marge AI',
       updateBody: (short) => `La version ${short} est prête. Ouvre les Réglages pour l'installer.`,
+      onboardingTitle: 'Marge AI est lancé',
+      onboardingBody: 'Place le pointeur sur le bord droit de l’écran pour afficher tes quotas.',
+      onboardingAction: 'Afficher le widget',
       errors: {
         loading: 'Lecture de la consommation en cours.',
         'no-credentials': 'Aucune session Claude sur cette machine. Lance <b>claude</b> une fois pour te connecter.',
@@ -392,6 +398,9 @@
       notifyBody: (name, percent) => `${name} está al ${percent} % de su límite.`,
       updateTitle: 'Actualización de Marge AI',
       updateBody: (short) => `La versión ${short} está lista. Abre Ajustes para instalarla.`,
+      onboardingTitle: 'Marge AI está activo',
+      onboardingBody: 'Mueve el puntero al borde derecho de la pantalla para ver tus cuotas.',
+      onboardingAction: 'Mostrar widget',
       errors: {
         loading: 'Leyendo tu consumo.',
         'no-credentials': 'No hay sesión de Claude en este equipo. Ejecuta <b>claude</b> una vez e inicia sesión.',
@@ -506,6 +515,9 @@
       notifyBody: (name, percent) => `${name} liegt bei ${percent} % des Limits.`,
       updateTitle: 'Marge AI Update',
       updateBody: (short) => `Version ${short} ist bereit. Zum Installieren die Einstellungen öffnen.`,
+      onboardingTitle: 'Marge AI läuft',
+      onboardingBody: 'Bewege den Zeiger an den rechten Bildschirmrand, um deine Kontingente zu sehen.',
+      onboardingAction: 'Widget anzeigen',
       errors: {
         loading: 'Verbrauch wird gelesen.',
         'no-credentials': 'Keine Claude-Sitzung auf diesem Rechner. Starte <b>claude</b> einmal und melde dich an.',
@@ -620,6 +632,9 @@
       notifyBody: (name, percent) => `${name} è al ${percent} % del limite.`,
       updateTitle: 'Aggiornamento Marge AI',
       updateBody: (short) => `La versione ${short} è pronta. Apri le Impostazioni per installarla.`,
+      onboardingTitle: 'Marge AI è attivo',
+      onboardingBody: 'Sposta il puntatore sul bordo destro dello schermo per vedere le tue quote.',
+      onboardingAction: 'Mostra widget',
       errors: {
         loading: 'Lettura del consumo in corso.',
         'no-credentials': 'Nessuna sessione Claude su questa macchina. Avvia <b>claude</b> una volta e accedi.',
@@ -734,6 +749,9 @@
       notifyBody: (name, percent) => `${name} 已用至上限的 ${percent}%。`,
       updateTitle: 'Marge AI 更新',
       updateBody: (short) => `版本 ${short} 已就绪。打开设置进行安装。`,
+      onboardingTitle: 'Marge AI 正在运行',
+      onboardingBody: '将指针移到屏幕右边缘即可查看配额。',
+      onboardingAction: '显示小组件',
       errors: {
         loading: '正在读取用量。',
         'no-credentials': '此设备上没有 Claude 会话。请运行一次 <b>claude</b> 并登录。',
@@ -848,6 +866,9 @@
       notifyBody: (name, percent) => `${name} は上限の ${percent}% です。`,
       updateTitle: 'Marge AI のアップデート',
       updateBody: (short) => `バージョン ${short} が利用できます。設定を開いてインストールしてください。`,
+      onboardingTitle: 'Marge AI は起動中です',
+      onboardingBody: 'ポインターを画面右端へ移動すると使用枠を確認できます。',
+      onboardingAction: 'ウィジェットを表示',
       errors: {
         loading: '使用量を読み込んでいます。',
         'no-credentials': 'このマシンに Claude のセッションがありません。<b>claude</b> を一度実行してサインインしてください。',

@@ -31,7 +31,7 @@ bash install.sh --local
 
 L’installateur crée atomiquement un snapshot dans `~/.marge-ai-widget`, installe uniquement le runtime Electron verrouillé, exécute toute la suite de tests, active le démarrage automatique puis lance le widget. En cas d’échec, l’installation précédente reste intacte.
 
-Place le pointeur au milieu du bord extérieur droit. L’icône de la barre des menus donne accès au rafraîchissement, aux réglages, aux mises à jour et à l’arrêt.
+Le premier lancement confirme que Marge AI tourne et explique le geste sur le bord droit ; cliquer sur la notification révèle le widget. Elle ne s’affiche qu’une fois. L’icône de la barre des menus reste l’indicateur permanent et donne accès au rafraîchissement, aux réglages, aux mises à jour et à l’arrêt.
 
 ```sh
 marge            # démarrer ou redémarrer
