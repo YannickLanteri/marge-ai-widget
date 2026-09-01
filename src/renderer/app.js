@@ -426,6 +426,7 @@ function updateInteractive(point) {
 function onCursor(point) {
   updateInteractive(point);
   if (!revealed || !items.length) return;
+  if (!hitRegions || !contains(hitRegions.pill, point, 2)) return;
   if (ringCentres.length !== items.length) measureRings();
   let best = 0;
   let distance = Infinity;
